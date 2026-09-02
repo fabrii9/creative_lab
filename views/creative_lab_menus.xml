@@ -3,6 +3,7 @@
     <menuitem id="menu_creative_lab_root"
               name="Creative Lab"
               sequence="45"
+              web_icon="creative_lab,static/description/icon.png"
               groups="creative_lab.grupo_creative_operador"/>
 
     <menuitem id="menu_creative_lab_work"
@@ -73,3 +74,4 @@
               action="accion_creative_agent_profile"
               sequence="10"/>
 </odoo>
+
