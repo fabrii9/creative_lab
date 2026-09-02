@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="agente_estratega_simulacion" model="creative.agent.profile">
+        <field name="name">Estratega · Simulación</field>
+        <field name="sequence">10</field>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="role">strategist</field>
+        <field name="task_type">text</field>
+        <field name="execution_mode">simulation</field>
+        <field name="model_alias">reasoning_high</field>
+        <field name="system_prompt">Convertí el brief en hipótesis de marketing claras, verificables y sin inventar evidencia. Respondé exclusivamente con JSON válido, sin bloques Markdown.</field>
+        <field name="prompt_template"><![CDATA[Brief:
+{brief}
+
+Pedido:
+{prompt}
+
+Devolvé una clave "angles" con tres objetos que incluyan name, segment, pain, awareness_level, sophistication_level, angle, hook y rationale.]]></field>
+        <field name="output_format">json</field>
+        <field name="output_schema"><![CDATA[{"angles":[{"name":"...","segment":"...","pain":"...","awareness_level":"problem","sophistication_level":"3","angle":"...","hook":"...","rationale":"..."}]}]]></field>
+    </record>
+
+    <record id="agente_director_simulacion" model="creative.agent.profile">
+        <field name="name">Director creativo · Simulación</field>
+        <field name="sequence">20</field>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="role">creative_director</field>
+        <field name="task_type">text</field>
+        <field name="execution_mode">simulation</field>
+        <field name="model_alias">creative_reasoning</field>
+        <field name="system_prompt">Diseñá conceptos visuales coherentes con el brief y una única hipótesis de marketing. Respondé exclusivamente con JSON válido, sin bloques Markdown.</field>
+        <field name="prompt_template"><![CDATA[Brief:
+{brief}
+
+Hipótesis:
+{hypothesis}
+
+Creativo: {creative}
+Pedido: {prompt}
+
+Devolvé una clave "concepts" con objetos que incluyan name, visual_description, headline, primary_text y image_prompt.]]></field>
+        <field name="output_format">json</field>
+        <field name="output_schema"><![CDATA[{"concepts":[{"name":"...","visual_description":"...","headline":"...","primary_text":"...","image_prompt":"..."}]}]]></field>
+    </record>
+
+    <record id="agente_visual_simulacion" model="creative.agent.profile">
+        <field name="name">Generador visual · Simulación</field>
+        <field name="sequence">30</field>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="role">image_generator</field>
+        <field name="task_type">image</field>
+        <field name="execution_mode">simulation</field>
+        <field name="model_alias">image_draft</field>
+        <field name="system_prompt">Generá una imagen publicitaria fiel al prompt, sin agregar afirmaciones no respaldadas.</field>
+        <field name="prompt_template"><![CDATA[{prompt}
+
+Contexto de marca y oferta:
+{brief}
+
+Hipótesis que debe expresar:
+{hypothesis}]]></field>
+        <field name="output_format">binary</field>
+    </record>
+
+    <record id="agente_revisor_simulacion" model="creative.agent.profile">
+        <field name="name">Revisor · Simulación</field>
+        <field name="sequence">40</field>
+        <field name="company_id" ref="base.main_company"/>
+        <field name="role">reviewer</field>
+        <field name="task_type">analysis</field>
+        <field name="execution_mode">simulation</field>
+        <field name="model_alias">vision_judge</field>
+        <field name="system_prompt">Evaluá legibilidad, coherencia con la hipótesis, marca y riesgos de cumplimiento. Respondé exclusivamente con JSON válido, sin bloques Markdown.</field>
+        <field name="prompt_template"><![CDATA[Brief:
+{brief}
+
+Hipótesis:
+{hypothesis}
+
+Pedido: {prompt}
+
+Devolvé verdict, legibility_score, hypothesis_score, brand_score, risks y corrections.]]></field>
+        <field name="output_format">json</field>
+        <field name="output_schema"><![CDATA[{"verdict":"approve|revise|reject","legibility_score":0,"hypothesis_score":0,"brand_score":0,"risks":[],"corrections":[]}]]></field>
+    </record>
+</odoo>

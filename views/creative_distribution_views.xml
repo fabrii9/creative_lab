@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="vista_creative_export_list" model="ir.ui.view">
+        <field name="name">creative.asset.export.list</field>
+        <field name="model">creative.asset.export</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false">
+                <field name="name"/>
+                <field name="creative_id"/>
+                <field name="version_id"/>
+                <field name="filename"/>
+                <field name="output_format"/>
+                <field name="metadata_removed"/>
+                <field name="file_size"/>
+                <field name="created_by_id" widget="many2one_avatar_user"/>
+                <field name="created_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_export_form" model="ir.ui.view">
+        <field name="name">creative.asset.export.form</field>
+        <field name="model">creative.asset.export</field>
+        <field name="arch" type="xml">
+            <form string="Exportación" create="false" delete="false">
+                <header>
+                    <button name="action_download" type="object" string="Descargar" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <field name="file" widget="image" class="oe_avatar" filename="filename" options="{'size': [320, 320]}"/>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group>
+                            <field name="creative_id"/>
+                            <field name="version_id"/>
+                            <field name="created_by_id" widget="many2one_avatar_user"/>
+                            <field name="created_at"/>
+                        </group>
+                        <group>
+                            <field name="filename"/>
+                            <field name="mime_type"/>
+                            <field name="output_format"/>
+                            <field name="quality"/>
+                            <field name="metadata_removed"/>
+                            <field name="file_size"/>
+                            <field name="sha256"/>
+                            <field name="fingerprint" invisible="1"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="accion_creative_export" model="ir.actions.act_window">
+        <field name="name">Exportaciones</field>
+        <field name="res_model">creative.asset.export</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="vista_creative_publication_list" model="ir.ui.view">
+        <field name="name">creative.publication.list</field>
+        <field name="model">creative.publication</field>
+        <field name="arch" type="xml">
+            <list decoration-success="status == 'active'" decoration-danger="status == 'error'">
+                <field name="name"/>
+                <field name="creative_id"/>
+                <field name="version_id"/>
+                <field name="external_ad_id"/>
+                <field name="spend" sum="Gasto"/>
+                <field name="conversation_count" sum="Conversaciones"/>
+                <field name="qualified_count" sum="Calificadas"/>
+                <field name="meeting_count" sum="Reuniones"/>
+                <field name="sale_count" sum="Ventas"/>
+                <field name="attributed_revenue" sum="Ingresos"/>
+                <field name="status" widget="badge"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_publication_form" model="ir.ui.view">
+        <field name="name">creative.publication.form</field>
+        <field name="model">creative.publication</field>
+        <field name="arch" type="xml">
+            <form string="Publicación">
+                <header>
+                    <button name="action_prepare" type="object" string="Preparar" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="status != 'draft'"/>
+                    <button name="action_activate" type="object" string="Marcar activa" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="status not in ['prepared', 'paused']"/>
+                    <button name="action_pause" type="object" string="Pausar" groups="creative_lab.grupo_creative_aprobador" invisible="status != 'active'"/>
+                    <button name="action_archive" type="object" string="Archivar" groups="creative_lab.grupo_creative_aprobador" invisible="status == 'archived'"/>
+                    <field name="status" widget="statusbar" statusbar_visible="draft,prepared,paused,active"/>
+                </header>
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group>
+                            <field name="creative_id"/>
+                            <field name="version_id" domain="[('creative_id', '=', creative_id)]"/>
+                            <field name="platform"/>
+                            <field name="destination_phone"/>
+                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="daily_budget"/>
+                            <field name="start_at"/>
+                            <field name="end_at"/>
+                            <field name="last_sync_at"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Meta Ads">
+                            <group>
+                                <field name="meta_account_id"/>
+                                <field name="external_campaign_id"/>
+                                <field name="external_adset_id"/>
+                                <field name="external_ad_id"/>
+                                <field name="external_creative_id"/>
+                                <field name="sync_error" invisible="not sync_error"/>
+                            </group>
+                        </page>
+                        <page string="Rendimiento">
+                            <group>
+                                <group>
+                                    <field name="spend"/>
+                                    <field name="impressions"/>
+                                    <field name="reach"/>
+                                    <field name="clicks"/>
+                                </group>
+                                <group>
+                                    <field name="conversation_count"/>
+                                    <field name="qualified_count"/>
+                                    <field name="meeting_count"/>
+                                    <field name="sale_count"/>
+                                    <field name="attributed_revenue"/>
+                                </group>
+                                <group string="Costos del embudo">
+                                    <field name="cost_per_conversation"/>
+                                    <field name="cost_per_qualified"/>
+                                    <field name="cost_per_sale"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Resultados comerciales">
+                            <field name="outcome_ids" context="{'default_publication_id': id}">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="event_type"/>
+                                    <field name="occurred_at"/>
+                                    <field name="partner_id"/>
+                                    <field name="lead_id"/>
+                                    <field name="amount"/>
+                                    <field name="source"/>
+                                    <field name="confidence"/>
+                                    <field name="confirmed"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_publication_search" model="ir.ui.view">
+        <field name="name">creative.publication.search</field>
+        <field name="model">creative.publication</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="creative_id"/>
+                <field name="external_ad_id"/>
+                <filter name="publication_live" string="En Meta" domain="[('status', 'in', ['paused', 'active'])]"/>
+                <filter name="group_status" string="Estado" context="{'group_by': 'status'}"/>
+                <filter name="group_creative" string="Creativo" context="{'group_by': 'creative_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_publication" model="ir.actions.act_window">
+        <field name="name">Publicaciones</field>
+        <field name="res_model">creative.publication</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="vista_creative_publication_search"/>
+    </record>
+
+    <record id="vista_creative_outcome_list" model="ir.ui.view">
+        <field name="name">creative.outcome.list</field>
+        <field name="model">creative.outcome</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="not confirmed">
+                <field name="occurred_at"/>
+                <field name="name"/>
+                <field name="publication_id"/>
+                <field name="creative_id"/>
+                <field name="event_type" widget="badge"/>
+                <field name="partner_id"/>
+                <field name="lead_id"/>
+                <field name="amount" sum="Ingresos"/>
+                <field name="source"/>
+                <field name="confidence"/>
+                <field name="confirmed"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_outcome_form" model="ir.ui.view">
+        <field name="name">creative.outcome.form</field>
+        <field name="model">creative.outcome</field>
+        <field name="arch" type="xml">
+            <form string="Resultado atribuible">
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group>
+                            <field name="publication_id"/>
+                            <field name="creative_id" readonly="1"/>
+                            <field name="version_id" readonly="1"/>
+                            <field name="event_type"/>
+                            <field name="occurred_at"/>
+                        </group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="lead_id"/>
+                            <field name="amount" invisible="event_type != 'sale'"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="confirmed"/>
+                        </group>
+                    </group>
+                    <group string="Atribución y evidencia">
+                        <field name="source"/>
+                        <field name="confidence"/>
+                        <field name="whatsapp_message_id"/>
+                        <field name="referral_ad_id"/>
+                        <field name="evidence"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_outcome_search" model="ir.ui.view">
+        <field name="name">creative.outcome.search</field>
+        <field name="model">creative.outcome</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="publication_id"/>
+                <field name="creative_id"/>
+                <field name="partner_id"/>
+                <field name="lead_id"/>
+                <filter name="outcome_confirmed" string="Confirmados" domain="[('confirmed', '=', True)]"/>
+                <filter name="group_event" string="Evento" context="{'group_by': 'event_type'}"/>
+                <filter name="group_creative" string="Creativo" context="{'group_by': 'creative_id'}"/>
+                <filter name="group_source" string="Fuente" context="{'group_by': 'source'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_outcome" model="ir.actions.act_window">
+        <field name="name">Resultados</field>
+        <field name="res_model">creative.outcome</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="vista_creative_outcome_search"/>
+    </record>
+</odoo>

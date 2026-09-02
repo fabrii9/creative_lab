@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="vista_creative_agent_profile_list" model="ir.ui.view">
+        <field name="name">creative.agent.profile.list</field>
+        <field name="model">creative.agent.profile</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="role"/>
+                <field name="task_type"/>
+                <field name="execution_mode" widget="badge"/>
+                <field name="model_alias"/>
+                <field name="llm_provider_id"/>
+                <field name="model_override" optional="show"/>
+                <field name="active" widget="boolean_toggle"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_agent_profile_form" model="ir.ui.view">
+        <field name="name">creative.agent.profile.form</field>
+        <field name="model">creative.agent.profile</field>
+        <field name="arch" type="xml">
+            <form string="Agente creativo">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="role"/>
+                            <field name="task_type"/>
+                            <field name="execution_mode"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="llm_provider_id" invisible="execution_mode != 'provider'"/>
+                            <field name="model_alias"/>
+                            <field name="model_override" invisible="execution_mode != 'provider'"/>
+                            <field name="image_size" invisible="task_type not in ['image', 'edit']"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Instrucciones">
+                            <group>
+                                <field name="system_prompt"/>
+                                <field name="prompt_template" placeholder="Usá {prompt}, {brief}, {hypothesis} y {creative}"/>
+                            </group>
+                        </page>
+                        <page string="Salida">
+                            <group>
+                                <field name="output_format"/>
+                                <field name="output_schema" invisible="output_format != 'json'"/>
+                            </group>
+                        </page>
+                        <page string="Límites">
+                            <group>
+                                <field name="temperature"/>
+                                <field name="max_tokens"/>
+                                <field name="timeout"/>
+                                <field name="max_cost_usd"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="accion_creative_agent_profile" model="ir.actions.act_window">
+        <field name="name">Agentes</field>
+        <field name="res_model">creative.agent.profile</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="vista_creative_agent_run_list" model="ir.ui.view">
+        <field name="name">creative.agent.run.list</field>
+        <field name="model">creative.agent.run</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" decoration-success="status == 'succeeded'" decoration-danger="status == 'failed'">
+                <field name="name"/>
+                <field name="profile_id"/>
+                <field name="creative_id"/>
+                <field name="operation"/>
+                <field name="provider_snapshot" optional="show"/>
+                <field name="model_snapshot"/>
+                <field name="attempt"/>
+                <field name="duration_seconds" optional="show"/>
+                <field name="estimated_cost" optional="show"/>
+                <field name="status" widget="badge"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_agent_run_form" model="ir.ui.view">
+        <field name="name">creative.agent.run.form</field>
+        <field name="model">creative.agent.run</field>
+        <field name="arch" type="xml">
+            <form string="Ejecución de agente" create="false" delete="false">
+                <header>
+                    <button name="action_execute" type="object" string="Ejecutar" class="btn-primary" invisible="status != 'queued'"/>
+                    <button name="action_retry" type="object" string="Reintentar" class="btn-primary" invisible="status != 'failed'"/>
+                    <button name="action_cancel" type="object" string="Cancelar" invisible="status not in ['queued', 'failed']"/>
+                    <field name="status" widget="statusbar" statusbar_visible="queued,running,succeeded"/>
+                </header>
+                <sheet>
+                    <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <group>
+                        <group>
+                            <field name="profile_id"/>
+                            <field name="task_type"/>
+                            <field name="operation"/>
+                            <field name="brief_id"/>
+                            <field name="creative_id"/>
+                            <field name="source_version_id"/>
+                            <field name="result_version_id"/>
+                        </group>
+                        <group>
+                            <field name="idempotency_key"/>
+                            <field name="attempt"/>
+                            <field name="started_at"/>
+                            <field name="finished_at"/>
+                            <field name="duration_seconds"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Entrada">
+                            <field name="input_prompt"/>
+                            <group>
+                                <field name="input_file" filename="input_filename"/>
+                                <field name="input_filename"/>
+                                <field name="input_mime_type"/>
+                            </group>
+                        </page>
+                        <page string="Resultado">
+                            <field name="output_text" invisible="not output_text"/>
+                            <field name="output_json" invisible="not output_json"/>
+                            <group invisible="not output_file">
+                                <field name="output_file" filename="output_filename"/>
+                                <field name="output_filename"/>
+                                <field name="output_mime_type"/>
+                            </group>
+                            <field name="error_message" invisible="not error_message"/>
+                        </page>
+                        <page string="Auditoría">
+                            <group>
+                                <field name="provider_snapshot"/>
+                                <field name="model_snapshot"/>
+                                <field name="external_request_id"/>
+                                <field name="tokens_input"/>
+                                <field name="tokens_output"/>
+                                <field name="estimated_cost"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_agent_run_search" model="ir.ui.view">
+        <field name="name">creative.agent.run.search</field>
+        <field name="model">creative.agent.run</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="profile_id"/>
+                <field name="creative_id"/>
+                <field name="model_snapshot"/>
+                <filter name="run_failed" string="Fallidas" domain="[('status', '=', 'failed')]"/>
+                <filter name="group_status" string="Estado" context="{'group_by': 'status'}"/>
+                <filter name="group_profile" string="Agente" context="{'group_by': 'profile_id'}"/>
+                <filter name="group_model" string="Modelo" context="{'group_by': 'model_snapshot'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_agent_run" model="ir.actions.act_window">
+        <field name="name">Ejecuciones</field>
+        <field name="res_model">creative.agent.run</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="vista_creative_agent_run_search"/>
+    </record>
+</odoo>

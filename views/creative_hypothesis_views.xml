@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="vista_creative_hypothesis_list" model="ir.ui.view">
+        <field name="name">creative.hypothesis.list</field>
+        <field name="model">creative.hypothesis</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="state == 'rejected'" decoration-success="state == 'learned'">
+                <field name="priority" widget="priority"/>
+                <field name="name"/>
+                <field name="brief_id"/>
+                <field name="segment"/>
+                <field name="awareness_level"/>
+                <field name="sophistication_level"/>
+                <field name="creative_count"/>
+                <field name="state" widget="badge"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_hypothesis_form" model="ir.ui.view">
+        <field name="name">creative.hypothesis.form</field>
+        <field name="model">creative.hypothesis</field>
+        <field name="arch" type="xml">
+            <form string="Hipótesis de marketing">
+                <header>
+                    <button name="action_select" type="object" string="Seleccionar" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_testing" type="object" string="Iniciar prueba" class="btn-primary" invisible="state != 'selected'"/>
+                    <button name="action_learned" type="object" string="Cerrar aprendizaje" class="btn-primary" invisible="state != 'testing'"/>
+                    <button name="action_reject" type="object" string="Descartar" invisible="state in ['learned', 'rejected']"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,selected,testing,learned"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="Si mostramos X a Y, debería ocurrir Z"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="brief_id"/>
+                            <field name="priority" widget="priority"/>
+                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="awareness_level"/>
+                            <field name="sophistication_level"/>
+                            <field name="expected_action"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Cliente y ángulo">
+                            <group>
+                                <field name="segment"/>
+                                <field name="pain"/>
+                                <field name="desire"/>
+                                <field name="objection"/>
+                            </group>
+                            <group>
+                                <field name="angle"/>
+                                <field name="hook"/>
+                                <field name="rationale"/>
+                            </group>
+                        </page>
+                        <page string="Aprendizaje">
+                            <field name="learning" placeholder="Qué aprendimos, con qué evidencia y cuál es el próximo test"/>
+                        </page>
+                        <page string="Creativos">
+                            <field name="creative_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="aspect_ratio"/>
+                                    <field name="placement"/>
+                                    <field name="version_count"/>
+                                    <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_hypothesis_search" model="ir.ui.view">
+        <field name="name">creative.hypothesis.search</field>
+        <field name="model">creative.hypothesis</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="brief_id"/>
+                <field name="segment"/>
+                <filter name="hypothesis_open" string="Abiertas" domain="[('state', 'in', ['draft', 'selected', 'testing'])]"/>
+                <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                <filter name="group_awareness" string="Conciencia" context="{'group_by': 'awareness_level'}"/>
+                <filter name="group_brief" string="Brief" context="{'group_by': 'brief_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_hypothesis" model="ir.actions.act_window">
+        <field name="name">Hipótesis</field>
+        <field name="res_model">creative.hypothesis</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="vista_creative_hypothesis_search"/>
+        <field name="context">{'search_default_hypothesis_open': 1}</field>
+    </record>
+</odoo>

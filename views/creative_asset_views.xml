@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="vista_creative_asset_list" model="ir.ui.view">
+        <field name="name">creative.asset.list</field>
+        <field name="model">creative.asset</field>
+        <field name="arch" type="xml">
+            <list decoration-muted="state == 'archived'" decoration-success="state == 'approved'">
+                <field name="name"/>
+                <field name="brief_id"/>
+                <field name="hypothesis_id" optional="show"/>
+                <field name="owner_id" widget="many2one_avatar_user"/>
+                <field name="asset_type"/>
+                <field name="aspect_ratio"/>
+                <field name="placement"/>
+                <field name="version_count"/>
+                <field name="publication_count" optional="show"/>
+                <field name="state" widget="badge"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_kanban" model="ir.ui.view">
+        <field name="name">creative.asset.kanban</field>
+        <field name="model">creative.asset</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="state" quick_create="false">
+                <field name="name"/>
+                <field name="brief_id"/>
+                <field name="preview_file"/>
+                <field name="preview_filename"/>
+                <field name="aspect_ratio"/>
+                <field name="version_count"/>
+                <field name="state"/>
+                <templates>
+                    <t t-name="card">
+                        <field t-if="record.preview_file.raw_value" name="preview_file" widget="image" class="w-100 mb-2"/>
+                        <div class="d-flex justify-content-between align-items-start">
+                            <strong><field name="name"/></strong>
+                            <field name="state" widget="badge"/>
+                        </div>
+                        <div class="text-muted mt-1"><field name="brief_id"/></div>
+                        <footer class="mt-2">
+                            <span><field name="aspect_ratio"/></span>
+                            <span class="ms-2"><field name="version_count"/> versiones</span>
+                        </footer>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_form" model="ir.ui.view">
+        <field name="name">creative.asset.form</field>
+        <field name="model">creative.asset</field>
+        <field name="arch" type="xml">
+            <form string="Creativo">
+                <header>
+                    <button name="action_open_generate_wizard" type="object" string="Generar / retocar" class="btn-primary" invisible="state == 'archived'"/>
+                    <button name="action_open_agent_wizard" type="object" string="Consultar agente" invisible="state == 'archived'"/>
+                    <button name="action_submit_review" type="object" string="Enviar a revisión" invisible="state not in ['draft', 'generating', 'rejected']"/>
+                    <button name="action_approve" type="object" string="Aprobar" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="state != 'review'"/>
+                    <button name="action_reject" type="object" string="Rechazar" groups="creative_lab.grupo_creative_aprobador" invisible="state != 'review'"/>
+                    <button name="action_reset_draft" type="object" string="Volver a borrador" invisible="state not in ['approved', 'rejected']"/>
+                    <button name="action_archive" type="object" string="Archivar" invisible="state == 'archived'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,generating,review,approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_versions" type="object" class="oe_stat_button" icon="fa-code-fork">
+                            <field name="version_count" widget="statinfo" string="Versiones"/>
+                        </button>
+                        <button name="action_view_publications" type="object" class="oe_stat_button" icon="fa-bullhorn">
+                            <field name="publication_count" widget="statinfo" string="Publicaciones"/>
+                        </button>
+                    </div>
+                    <field name="preview_file" widget="image" class="oe_avatar" filename="preview_filename" options="{'size': [256, 256]}"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="brief_id"/>
+                            <field name="hypothesis_id" domain="[('brief_id', '=', brief_id)]"/>
+                            <field name="owner_id" widget="many2one_avatar_user"/>
+                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="asset_type"/>
+                            <field name="aspect_ratio"/>
+                            <field name="placement"/>
+                            <field name="current_version_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Mensaje">
+                            <group>
+                                <field name="headline"/>
+                                <field name="primary_text"/>
+                                <field name="call_to_action"/>
+                                <field name="notes"/>
+                            </group>
+                        </page>
+                        <page string="Versiones">
+                            <field name="version_ids" readonly="1">
+                                <list>
+                                    <field name="revision"/>
+                                    <field name="name"/>
+                                    <field name="parent_id"/>
+                                    <field name="operation"/>
+                                    <field name="model_snapshot"/>
+                                    <field name="author_id" widget="many2one_avatar_user"/>
+                                    <field name="sha256" optional="hide"/>
+                                    <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Aprobación" invisible="state not in ['review', 'approved', 'rejected']">
+                            <group>
+                                <field name="rejection_reason" placeholder="Obligatorio antes de rechazar"/>
+                                <field name="approved_by_id" readonly="1"/>
+                                <field name="approved_at" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_search" model="ir.ui.view">
+        <field name="name">creative.asset.search</field>
+        <field name="model">creative.asset</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="brief_id"/>
+                <field name="hypothesis_id"/>
+                <field name="owner_id"/>
+                <filter name="asset_active_work" string="En trabajo" domain="[('state', 'in', ['draft', 'generating', 'review', 'rejected'])]"/>
+                <filter name="asset_approved" string="Aprobados" domain="[('state', '=', 'approved')]"/>
+                <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                <filter name="group_brief" string="Brief" context="{'group_by': 'brief_id'}"/>
+                <filter name="group_hypothesis" string="Hipótesis" context="{'group_by': 'hypothesis_id'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_asset" model="ir.actions.act_window">
+        <field name="name">Creativos</field>
+        <field name="res_model">creative.asset</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="search_view_id" ref="vista_creative_asset_search"/>
+        <field name="context">{'search_default_asset_active_work': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Creá el primer creativo</p>
+            <p>Cada generación y retoque quedará registrado como una versión inmutable.</p>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_version_list" model="ir.ui.view">
+        <field name="name">creative.asset.version.list</field>
+        <field name="model">creative.asset.version</field>
+        <field name="arch" type="xml">
+            <list create="false" delete="false" decoration-success="state == 'approved'" decoration-danger="state == 'rejected'">
+                <field name="name"/>
+                <field name="creative_id"/>
+                <field name="revision"/>
+                <field name="parent_id"/>
+                <field name="operation"/>
+                <field name="provider_snapshot" optional="show"/>
+                <field name="model_snapshot"/>
+                <field name="width" optional="show"/>
+                <field name="height" optional="show"/>
+                <field name="file_size" optional="hide"/>
+                <field name="author_id" widget="many2one_avatar_user"/>
+                <field name="state" widget="badge"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_version_form" model="ir.ui.view">
+        <field name="name">creative.asset.version.form</field>
+        <field name="model">creative.asset.version</field>
+        <field name="arch" type="xml">
+            <form string="Versión creativa" create="false" delete="false">
+                <header>
+                    <button name="action_open_branch_wizard" type="object" string="Crear rama" class="btn-primary"/>
+                    <button name="action_open_review_agent_wizard" type="object" string="Revisar con IA"/>
+                    <button name="action_submit_review" type="object" string="Enviar a revisión" invisible="state not in ['draft', 'rejected']"/>
+                    <button name="action_approve" type="object" string="Aprobar" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="state != 'review'"/>
+                    <button name="action_reject" type="object" string="Rechazar" groups="creative_lab.grupo_creative_aprobador" invisible="state != 'review'"/>
+                    <button name="action_open_export_wizard" type="object" string="Exportar limpio" class="btn-primary" invisible="state != 'approved'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,review,approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_exports" type="object" class="oe_stat_button" icon="fa-download">
+                            <field name="export_count" widget="statinfo" string="Exports"/>
+                        </button>
+                    </div>
+                    <field name="file" widget="image" class="oe_avatar" filename="filename" options="{'size': [320, 320]}"/>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="creative_id"/>
+                            <field name="revision"/>
+                            <field name="parent_id"/>
+                            <field name="operation"/>
+                            <field name="author_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group>
+                            <field name="filename"/>
+                            <field name="mime_type"/>
+                            <field name="width"/>
+                            <field name="height"/>
+                            <field name="file_size"/>
+                            <field name="sha256"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Prompt y procedencia">
+                            <group>
+                                <field name="prompt"/>
+                                <field name="negative_prompt"/>
+                                <field name="source_filename"/>
+                                <field name="source_sha256"/>
+                            </group>
+                        </page>
+                        <page string="Ejecución">
+                            <group>
+                                <field name="agent_profile_id"/>
+                                <field name="agent_run_id"/>
+                                <field name="provider_snapshot"/>
+                                <field name="model_snapshot"/>
+                                <field name="parameters_json" widget="json"/>
+                                <field name="external_request_id"/>
+                                <field name="estimated_cost"/>
+                            </group>
+                        </page>
+                        <page string="Revisión">
+                            <group>
+                                <field name="notes"/>
+                                <field name="rejection_reason"/>
+                                <field name="approval_requested_by_id"/>
+                                <field name="approval_requested_at"/>
+                                <field name="approved_by_id"/>
+                                <field name="approved_at"/>
+                            </group>
+                        </page>
+                        <page string="Ramas">
+                            <field name="child_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="operation"/>
+                                    <field name="model_snapshot"/>
+                                    <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="vista_creative_asset_version_search" model="ir.ui.view">
+        <field name="name">creative.asset.version.search</field>
+        <field name="model">creative.asset.version</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="creative_id"/>
+                <field name="model_snapshot"/>
+                <filter name="version_approved" string="Aprobadas" domain="[('state', '=', 'approved')]"/>
+                <filter name="group_creative" string="Creativo" context="{'group_by': 'creative_id'}"/>
+                <filter name="group_state" string="Estado" context="{'group_by': 'state'}"/>
+                <filter name="group_model" string="Modelo" context="{'group_by': 'model_snapshot'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="accion_creative_asset_version" model="ir.actions.act_window">
+        <field name="name">Versiones</field>
+        <field name="res_model">creative.asset.version</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="vista_creative_asset_version_search"/>
+    </record>
+</odoo>

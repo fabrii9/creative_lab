@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="modulo_categoria_creative_lab" model="ir.module.category">
+        <field name="name">Creative Lab</field>
+        <field name="sequence">30</field>
+    </record>
+
+    <record id="privilegio_creative_lab" model="res.groups.privilege">
+        <field name="name">Creative Lab</field>
+        <field name="category_id" ref="modulo_categoria_creative_lab"/>
+        <field name="sequence">10</field>
+    </record>
+
+    <record id="grupo_creative_operador" model="res.groups">
+        <field name="name">Creador</field>
+        <field name="privilege_id" ref="privilegio_creative_lab"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+
+    <record id="grupo_creative_aprobador" model="res.groups">
+        <field name="name">Aprobador y publicador</field>
+        <field name="privilege_id" ref="privilegio_creative_lab"/>
+        <field name="implied_ids" eval="[(4, ref('grupo_creative_operador'))]"/>
+    </record>
+
+    <record id="grupo_creative_administrador" model="res.groups">
+        <field name="name">Administrador</field>
+        <field name="privilege_id" ref="privilegio_creative_lab"/>
+        <field name="implied_ids" eval="[(4, ref('grupo_creative_aprobador'))]"/>
+        <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+    </record>
+
+    <record id="regla_brief_compania" model="ir.rule">
+        <field name="name">Creative Lab: briefs por compañía</field>
+        <field name="model_id" ref="model_creative_brief"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_hypothesis_compania" model="ir.rule">
+        <field name="name">Creative Lab: hipótesis por compañía</field>
+        <field name="model_id" ref="model_creative_hypothesis"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_asset_compania" model="ir.rule">
+        <field name="name">Creative Lab: creativos por compañía</field>
+        <field name="model_id" ref="model_creative_asset"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_version_compania" model="ir.rule">
+        <field name="name">Creative Lab: versiones por compañía</field>
+        <field name="model_id" ref="model_creative_asset_version"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_profile_compania" model="ir.rule">
+        <field name="name">Creative Lab: agentes por compañía</field>
+        <field name="model_id" ref="model_creative_agent_profile"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_run_compania" model="ir.rule">
+        <field name="name">Creative Lab: ejecuciones por compañía</field>
+        <field name="model_id" ref="model_creative_agent_run"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_export_compania" model="ir.rule">
+        <field name="name">Creative Lab: exportaciones por compañía</field>
+        <field name="model_id" ref="model_creative_asset_export"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_publication_compania" model="ir.rule">
+        <field name="name">Creative Lab: publicaciones por compañía</field>
+        <field name="model_id" ref="model_creative_publication"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_outcome_compania" model="ir.rule">
+        <field name="name">Creative Lab: resultados por compañía</field>
+        <field name="model_id" ref="model_creative_outcome"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

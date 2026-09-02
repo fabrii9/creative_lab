@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="vista_project_project_form_creative_lab" model="ir.ui.view">
+        <field name="name">project.project.form.creative.lab</field>
+        <field name="model">project.project</field>
+        <field name="inherit_id" ref="project.edit_project"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_view_creative_briefs" type="object" class="oe_stat_button" icon="fa-picture-o" groups="creative_lab.grupo_creative_operador">
+                    <field name="creative_brief_count" widget="statinfo" string="Briefs creativos"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+</odoo>

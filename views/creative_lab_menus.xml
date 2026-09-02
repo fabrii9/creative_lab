@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_creative_lab_root"
+              name="Creative Lab"
+              sequence="45"
+              groups="creative_lab.grupo_creative_operador"/>
+
+    <menuitem id="menu_creative_lab_work"
+              name="Producción"
+              parent="menu_creative_lab_root"
+              sequence="10"/>
+    <menuitem id="menu_creative_briefs"
+              name="Briefs"
+              parent="menu_creative_lab_work"
+              action="accion_creative_brief"
+              sequence="10"/>
+    <menuitem id="menu_creative_hypotheses"
+              name="Hipótesis"
+              parent="menu_creative_lab_work"
+              action="accion_creative_hypothesis"
+              sequence="20"/>
+    <menuitem id="menu_creative_assets"
+              name="Creativos"
+              parent="menu_creative_lab_work"
+              action="accion_creative_asset"
+              sequence="30"/>
+    <menuitem id="menu_creative_versions"
+              name="Versiones"
+              parent="menu_creative_lab_work"
+              action="accion_creative_asset_version"
+              sequence="40"/>
+
+    <menuitem id="menu_creative_distribution"
+              name="Distribución y resultados"
+              parent="menu_creative_lab_root"
+              sequence="20"/>
+    <menuitem id="menu_creative_exports"
+              name="Exportaciones"
+              parent="menu_creative_distribution"
+              action="accion_creative_export"
+              sequence="10"/>
+    <menuitem id="menu_creative_publications"
+              name="Publicaciones"
+              parent="menu_creative_distribution"
+              action="accion_creative_publication"
+              sequence="20"
+              groups="creative_lab.grupo_creative_aprobador"/>
+    <menuitem id="menu_creative_outcomes"
+              name="Resultados"
+              parent="menu_creative_distribution"
+              action="accion_creative_outcome"
+              sequence="30"
+              groups="creative_lab.grupo_creative_aprobador"/>
+
+    <menuitem id="menu_creative_ai"
+              name="IA y auditoría"
+              parent="menu_creative_lab_root"
+              sequence="30"/>
+    <menuitem id="menu_creative_runs"
+              name="Ejecuciones"
+              parent="menu_creative_ai"
+              action="accion_creative_agent_run"
+              sequence="10"/>
+
+    <menuitem id="menu_creative_configuration"
+              name="Configuración"
+              parent="menu_creative_lab_root"
+              sequence="90"
+              groups="creative_lab.grupo_creative_administrador"/>
+    <menuitem id="menu_creative_agents"
+              name="Agentes"
+              parent="menu_creative_configuration"
+              action="accion_creative_agent_profile"
+              sequence="10"/>
+</odoo>
