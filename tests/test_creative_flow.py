@@ -3,6 +3,7 @@
 import base64
 import hashlib
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
@@ -269,3 +270,182 @@ class TestCreativeFlow(TransactionCase):
         self.creative.aspect_ratio = '9:16'
         story = self._generate('Composición editorial para stories')
         self.assertEqual((story.width, story.height), (1080, 1920))
+
+    def _provider_profile(self, **overrides):
+        provider = self.env['llm.provider'].create({
+            'name': 'OpenAI guardrails test',
+            'provider_type': 'openai',
+            'api_key': 'test-key-never-sent',
+            'model': 'model-test',
+            'company_id': self.company.id,
+        })
+        values = {
+            'name': 'Agente real de prueba',
+            'company_id': self.company.id,
+            'role': 'strategist',
+            'task_type': 'text',
+            'execution_mode': 'provider',
+            'llm_provider_id': provider.id,
+            'system_prompt': 'Respondé con JSON.',
+            'output_format': 'json',
+            'output_schema': '{"result":{"name":"...","score":0}}',
+            'max_tokens': 1_000,
+            'max_cost_usd': 0.05,
+            'input_cost_per_million': 2.0,
+            'output_cost_per_million': 12.0,
+        }
+        values.update(overrides)
+        return self.env['creative.agent.profile'].create(values)
+
+    def _agent_run(self, profile):
+        return self.env['creative.agent.run'].create({
+            'profile_id': profile.id,
+            'company_id': self.company.id,
+            'brief_id': self.brief.id,
+            'operation': 'strategy',
+            'input_prompt': 'Generá una propuesta corta.',
+        })
+
+    def test_provider_call_is_blocked_without_pricing(self):
+        profile = self._provider_profile(
+            input_cost_per_million=0.0,
+            output_cost_per_million=0.0,
+            fixed_cost_usd=0.0,
+        )
+        run = self._agent_run(profile)
+        with patch.object(CreativeLLMBridge, 'execute') as execute:
+            run._execute()
+        execute.assert_not_called()
+        self.assertEqual(run.status, 'failed')
+        self.assertIn('tarifas', run.error_message)
+
+    def test_provider_call_is_blocked_when_preflight_exceeds_budget(self):
+        profile = self._provider_profile(
+            max_cost_usd=0.001,
+            output_cost_per_million=12.0,
+        )
+        run = self._agent_run(profile)
+        with patch.object(CreativeLLMBridge, 'execute') as execute:
+            run._execute()
+        execute.assert_not_called()
+        self.assertEqual(run.status, 'failed')
+        self.assertIn('supera el máximo', run.error_message)
+
+    def test_image_call_requires_a_fixed_cost_estimate(self):
+        profile = self._provider_profile(
+            role='image_generator',
+            task_type='image',
+            output_format='binary',
+            output_schema=False,
+            fixed_cost_usd=0.0,
+        )
+        run = self.env['creative.agent.run'].create({
+            'profile_id': profile.id,
+            'company_id': self.company.id,
+            'brief_id': self.brief.id,
+            'creative_id': self.creative.id,
+            'operation': 'initial',
+            'input_prompt': 'Generá una imagen de prueba.',
+        })
+        with patch.object(CreativeLLMBridge, 'execute') as execute:
+            run._execute()
+        execute.assert_not_called()
+        self.assertEqual(run.status, 'failed')
+        self.assertIn('costo fijo conservador', run.error_message)
+
+    def test_json_output_is_validated_against_example_schema(self):
+        profile = self._provider_profile()
+        run = self._agent_run(profile)
+        response = {
+            'text': '{"result":{"name":"Variante A"}}',
+            'provider': 'OpenAI guardrails test',
+            'model': 'model-test',
+        }
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            run._execute()
+        self.assertEqual(run.status, 'failed')
+        self.assertIn('$.result.score', run.error_message)
+
+    def test_json_schema_subset_accepts_a_valid_response(self):
+        profile = self._provider_profile(output_schema='''{
+            "type": "object",
+            "required": ["verdict", "score"],
+            "properties": {
+                "verdict": {"type": "string", "enum": ["approve", "revise"]},
+                "score": {"type": "number"}
+            },
+            "additionalProperties": false
+        }''')
+        run = self._agent_run(profile)
+        response = {
+            'text': '{"verdict":"approve","score":9}',
+            'provider': 'OpenAI guardrails test',
+            'model': 'model-test',
+        }
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            run._execute()
+        self.assertEqual(run.status, 'succeeded')
+        self.assertEqual(run.output_json['verdict'], 'approve')
+        self.assertGreater(run.estimated_cost, 0)
+
+    def test_reported_cost_over_limit_rejects_result(self):
+        profile = self._provider_profile(max_cost_usd=0.05)
+        run = self._agent_run(profile)
+        response = {
+            'text': '{"result":{"name":"Variante A","score":8}}',
+            'provider': 'OpenAI guardrails test',
+            'model': 'model-test',
+            'cost': 0.08,
+        }
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            run._execute()
+        self.assertEqual(run.status, 'failed')
+        self.assertEqual(run.estimated_cost, 0.08)
+        self.assertIn('supera el máximo', run.error_message)
+
+    def test_output_schema_must_be_valid_json(self):
+        with self.assertRaises(ValidationError):
+            self.env['creative.agent.profile'].create({
+                'name': 'Esquema inválido',
+                'company_id': self.company.id,
+                'system_prompt': 'Test',
+                'output_format': 'json',
+                'output_schema': '{invalid',
+            })
+
+    def test_non_finite_json_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            self.env['creative.agent.run']._parse_json('{"score": NaN}')
+
+    def test_example_with_type_key_is_not_misread_as_json_schema(self):
+        profile = self._provider_profile(
+            output_schema='{"type":"ad","headline":"..."}',
+        )
+        run = self._agent_run(profile)
+        response = {
+            'text': '{"type":"campaign","headline":"Una propuesta"}',
+            'provider': 'OpenAI guardrails test',
+            'model': 'model-test',
+        }
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            run._execute()
+        self.assertEqual(run.status, 'succeeded')
+
+    def test_simulation_allows_zero_budget_and_role_specific_schemas(self):
+        for xmlid, expected_key in (
+            ('creative_lab.agente_director_simulacion', 'concepts'),
+            ('creative_lab.agente_revisor_simulacion', 'verdict'),
+        ):
+            profile = self.env.ref(xmlid)
+            profile.max_cost_usd = 0.0
+            run = self.env['creative.agent.run'].create({
+                'profile_id': profile.id,
+                'company_id': self.company.id,
+                'brief_id': self.brief.id,
+                'creative_id': self.creative.id,
+                'operation': 'review' if profile.role == 'reviewer' else 'analysis',
+                'input_prompt': 'Validá el flujo simulado.',
+            })
+            run._execute()
+            self.assertEqual(run.status, 'succeeded', run.error_message)
+            self.assertIn(expected_key, run.output_json)

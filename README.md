@@ -50,6 +50,14 @@ El puente incluido admite:
 - Análisis visual, generación y edición de imágenes con Gemini.
 - Generación/edición OpenAI y endpoints OpenAI compatibles cuando el modelo lo soporta.
 
+`gpt-image-2` usa la relación de aspecto del creativo para elegir el tamaño de
+salida. La familia `gpt-image*` permite configurar calidad automática, baja,
+media o alta; los modelos con tamaños legacy conservan el valor del perfil.
+
+Los perfiles reales requieren tarifas o un costo fijo conservador y respetan
+el máximo configurado antes de llamar al proveedor. Las respuestas JSON se
+validan contra la forma o el subconjunto de JSON Schema guardado en el agente.
+
 Como la versión integrada de `llm_connector` no publica aún una API de imagen,
 las capacidades visuales faltantes quedan aisladas en un adaptador propio que
 reutiliza sus credenciales y configuración; el resto usa su API pública.

@@ -22,6 +22,12 @@ class CreativeLLMBridge:
     OPENAI_COMPATIBLE = {'openai', 'custom'}
     VISION_OPENAI_COMPATIBLE = {'openai', 'kimi', 'kimi_code', 'groq', 'custom'}
     SUPPORTED_VISION_MIMES = {'image/png', 'image/jpeg', 'image/webp', 'image/gif'}
+    GPT_IMAGE_SIZES = {
+        '1:1': '1024x1024',
+        '4:5': '1024x1280',
+        '9:16': '1152x2048',
+        '1.91:1': '1792x944',
+    }
 
     def __init__(self, env):
         self.env = env
@@ -55,6 +61,12 @@ class CreativeLLMBridge:
                 rendered = profile.prompt_template.format(**values)
             except (KeyError, ValueError) as exc:
                 raise ValidationError(_('La plantilla del agente contiene una variable inválida.')) from exc
+        if profile.output_format == 'json' and profile.output_schema:
+            schema_instruction = _(
+                'Respondé exclusivamente con JSON válido que cumpla este esquema o forma:\n'
+                '%(schema)s'
+            ) % {'schema': profile.output_schema.strip()}
+            rendered = '\n\n'.join(filter(None, [rendered, schema_instruction]))
         if profile.task_type in ('image', 'edit') and profile.system_prompt:
             return '%s\n\n%s' % (profile.system_prompt, rendered)
         return rendered
@@ -92,16 +104,66 @@ class CreativeLLMBridge:
     def _simulate(self, run, prompt):
         digest = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
         if run.profile_id.task_type in ('text', 'analysis'):
-            payload = {
+            role = run.profile_id.role
+            if role == 'creative_director':
+                payload = {
+                    'concepts': [{
+                        'name': 'Concepto editorial de prueba',
+                        'visual_description': 'Composición sobria con jerarquía tipográfica clara.',
+                        'headline': 'Una idea clara para validar el flujo.',
+                        'primary_text': 'Resultado simulado, sin afirmaciones comerciales reales.',
+                        'image_prompt': 'Pieza editorial minimalista con alto contraste.',
+                    }],
+                }
+            elif role in ('reviewer', 'analyst'):
+                payload = {
+                    'verdict': 'revise',
+                    'legibility_score': 8,
+                    'hypothesis_score': 7,
+                    'brand_score': 8,
+                    'risks': ['Resultado simulado: requiere revisión humana.'],
+                    'corrections': ['Validar el archivo raster con un proveedor real.'],
+                }
+            else:
+                payload = {
+                    'angles': [
+                        {
+                            'name': 'Dolor inmediato',
+                            'segment': 'Público definido en el brief',
+                            'pain': 'Problema visible y urgente',
+                            'awareness_level': 'problem',
+                            'sophistication_level': '3',
+                            'angle': 'Priorizar el problema visible.',
+                            'hook': '¿Cuánto cuesta seguir postergando este problema?',
+                            'rationale': 'Hace reconocible el costo actual antes de presentar la oferta.',
+                        },
+                        {
+                            'name': 'Resultado deseado',
+                            'segment': 'Público definido en el brief',
+                            'pain': 'Distancia entre el estado actual y el resultado buscado',
+                            'awareness_level': 'solution',
+                            'sophistication_level': '3',
+                            'angle': 'Mostrar la transformación.',
+                            'hook': 'Convertí el esfuerzo actual en un resultado visible.',
+                            'rationale': 'Conecta la oferta con una mejora concreta sin inventar evidencia.',
+                        },
+                        {
+                            'name': 'Objeción principal',
+                            'segment': 'Público definido en el brief',
+                            'pain': 'Riesgo percibido al actuar',
+                            'awareness_level': 'product',
+                            'sophistication_level': '3',
+                            'angle': 'Reducir el riesgo percibido.',
+                            'hook': 'Probá un primer paso claro antes de comprometerte.',
+                            'rationale': 'Responde a la fricción principal con una acción de bajo riesgo.',
+                        },
+                    ],
+                }
+            payload.update({
                 'simulation': True,
                 'summary': 'Resultado simulado para validar el workflow.',
                 'prompt_fingerprint': digest[:12],
-                'angles': [
-                    {'name': 'Dolor inmediato', 'hypothesis': 'Priorizar el problema visible.'},
-                    {'name': 'Resultado deseado', 'hypothesis': 'Mostrar la transformación.'},
-                    {'name': 'Objeción principal', 'hypothesis': 'Reducir el riesgo percibido.'},
-                ],
-            }
+            })
             return {
                 'text': json.dumps(payload, ensure_ascii=False, indent=2),
                 'json': payload,
@@ -306,17 +368,24 @@ class CreativeLLMBridge:
         model = profile.model_override or provider.model
         timeout = profile.timeout or provider.timeout or 120
         source = self._source_bytes(run)
+        parameters = {
+            'model': model,
+            'prompt': prompt,
+            'size': self._openai_image_size(profile, run, model),
+        }
+        if self._is_gpt_image_model(model):
+            parameters['quality'] = profile.image_quality or 'auto'
+        else:
+            # GPT Image returns base64 data by default and rejects this legacy
+            # Images API parameter. DALL-E and compatible legacy endpoints still
+            # need it to avoid receiving a temporary URL.
+            parameters['response_format'] = 'b64_json'
         try:
             if source:
                 response = requests.post(
                     base_url + '/images/edits',
                     headers=headers,
-                    data={
-                        'model': model,
-                        'prompt': prompt,
-                        'size': profile.image_size,
-                        'response_format': 'b64_json',
-                    },
+                    data=parameters,
                     files={'image': (self._source_filename(run), source, self._source_mime(run))},
                     timeout=timeout,
                 )
@@ -324,12 +393,7 @@ class CreativeLLMBridge:
                 response = requests.post(
                     base_url + '/images/generations',
                     headers={**headers, 'Content-Type': 'application/json'},
-                    json={
-                        'model': model,
-                        'prompt': prompt,
-                        'size': profile.image_size,
-                        'response_format': 'b64_json',
-                    },
+                    json=parameters,
                     timeout=timeout,
                 )
             response.raise_for_status()
@@ -355,6 +419,20 @@ class CreativeLLMBridge:
             'model': model,
             'request_id': response.headers.get('x-request-id'),
         }
+
+    def _openai_image_size(self, profile, run, model):
+        if not self._is_gpt_image_2_model(model):
+            return profile.image_size
+        aspect_ratio = run.creative_id.aspect_ratio if run.creative_id else False
+        return self.GPT_IMAGE_SIZES.get(aspect_ratio, profile.image_size)
+
+    @staticmethod
+    def _is_gpt_image_model(model):
+        return (model or '').strip().lower().startswith('gpt-image')
+
+    @staticmethod
+    def _is_gpt_image_2_model(model):
+        return (model or '').strip().lower().startswith('gpt-image-2')
 
     def _generate_gemini_image(self, provider, profile, run, prompt):
         base_url = (provider.base_url or 'https://generativelanguage.googleapis.com/v1beta').rstrip('/')

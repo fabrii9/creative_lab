@@ -133,6 +133,8 @@ class CreativeGenerateWizard(models.TransientModel):
                 'temperature': self.agent_profile_id.temperature,
                 'max_tokens': self.agent_profile_id.max_tokens,
                 'image_size': self.agent_profile_id.image_size,
+                'image_quality': self.agent_profile_id.image_quality,
+                'aspect_ratio': self.creative_id.aspect_ratio,
             },
             'external_request_id': run.external_request_id,
             'estimated_cost': run.estimated_cost,
