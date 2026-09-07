@@ -1,6 +1,6 @@
 {
     'name': 'Creative Lab AI',
-    'version': '19.0.1.0.2',
+    'version': '19.0.2.0.0',
     'category': 'Marketing',
     'summary': 'Creación, versionado, aprobación y atribución de creativos con IA',
     'description': """
@@ -26,6 +26,7 @@ metadatos y registrar publicaciones y resultados comerciales.
         'security/ir.model.access.csv',
         'data/sequence_data.xml',
         'data/agent_profile_data.xml',
+        'data/meta_ads_cron.xml',
         'wizard/generate_creative_wizard_views.xml',
         'wizard/run_agent_wizard_views.xml',
         'wizard/export_asset_wizard_views.xml',
@@ -33,6 +34,7 @@ metadatos y registrar publicaciones y resultados comerciales.
         'views/creative_hypothesis_views.xml',
         'views/creative_asset_views.xml',
         'views/creative_agent_views.xml',
+        'views/creative_meta_views.xml',
         'views/creative_distribution_views.xml',
         'views/project_project_views.xml',
         'views/creative_lab_menus.xml',

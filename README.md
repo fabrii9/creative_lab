@@ -8,7 +8,8 @@ MVP instalable para gestionar todo el ciclo de un creativo:
 4. Ejecuciones auditadas de agentes mediante `llm_connector`.
 5. Simulador visual sin credenciales para probar el flujo completo.
 6. Aprobación y exportación con limpieza de metadatos.
-7. Publicaciones Meta y resultados comerciales registrados manualmente.
+7. Publicación real y segura en Meta Ads, siempre pausada al crear.
+8. Sincronización acumulada y diaria de métricas por anuncio.
 
 ## Instalación
 
@@ -17,7 +18,8 @@ Copiar `creative_lab` al `addons_path`, comprobar que el módulo técnico
 **Creative Lab AI**.
 
 Para usuarios no administradores, asignar el privilegio **Creative Lab** como
-**Creador**, **Aprobador y publicador** o **Administrador**.
+**Creador**, **Aprobador**, **Publicador de Meta**, **Activador de Meta** o
+**Administrador**. Sólo el activador puede iniciar o detener gasto real.
 
 El módulo está diseñado para Odoo.sh u on-premise. No se puede instalar como
 módulo Python personalizado en Odoo Online.
@@ -65,8 +67,56 @@ reutiliza sus credenciales y configuración; el resto usa su API pública.
 Las credenciales nunca se copian a los registros de Creative Lab: se leen del
 registro `llm.provider` en el momento de ejecutar.
 
-## Alcance intencional del MVP
+## Meta Ads
 
-La publicación en Meta Ads y la lectura automática de la referencia de anuncios
-desde webhooks de WhatsApp quedan modeladas, pero todavía no llaman APIs. Esto
-permite validar el modelo de negocio antes de autorizar gasto publicitario.
+Creative Lab usa la Marketing API fijada por conexión (por defecto `v26.0`).
+El token no se persiste en Odoo: debe existir como variable de entorno dentro
+del contenedor, por defecto `CREATIVE_LAB_META_ACCESS_TOKEN`. Se recomienda un
+token de System User con los activos asignados y permisos `ads_management`,
+`ads_read`, `pages_manage_ads`, `pages_read_engagement` y `pages_show_list`.
+
+Configuración:
+
+1. Abrir **Creative Lab > Configuración > Conexiones Meta Ads**.
+2. Indicar Ad Account ID, Page ID, Instagram User ID opcional y el número de
+   WhatsApp internacional vinculado a esa página.
+3. Configurar topes de presupuesto, probar la conexión y recién entonces
+   habilitar **Permitir crear en pausa**.
+4. Crear una publicación con versión aprobada y una exportación PNG/JPEG con
+   metadatos eliminados. Completar copy, targeting, presupuesto y fecha final.
+   El targeting inicial declara audiencia manual (`advantage_audience: 0`);
+   revisarlo explícitamente antes de preparar.
+5. **Preparar** y luego **Crear pausada en Meta**. La imagen, campaña, conjunto,
+   creativo y anuncio se crean explícitamente en `PAUSED`.
+6. Revisar la jerarquía en Ads Manager. La activación es un botón separado,
+   requiere el grupo Activador, una fecha final, topes válidos y que la conexión
+   tenga habilitada la activación. El botón crea una orden durable; un worker la
+   procesa en menos de un minuto y activa la campaña al final, después de volver
+   a verificar en Meta presupuesto, fecha, segmentación, destino y relaciones.
+
+Si una escritura queda sin respuesta concluyente, Creative Lab bloquea el
+reintento y exige **Conciliar con Meta**. Para cambios de entrega consulta
+campaña, conjunto y anuncio; ante estados mixtos conserva el bloqueo y ofrece
+una pausa de seguridad al rol Activador.
+
+Cada publicación usa una clave aleatoria e inmutable en los nombres remotos.
+Antes de crear cada objeto, Odoo busca esa clave y recupera únicamente una
+coincidencia pausada con las relaciones esperadas. Esto permite retomar el
+flujo sin duplicar objetos si un worker se interrumpe después de que Meta
+aceptó una escritura.
+
+La sincronización manual o cada 30 minutos consulta el estado del anuncio y
+Ads Insights. Guarda gasto, impresiones, alcance, clics, CTR, CPC, CPM,
+frecuencia, acciones crudas y conversaciones atribuidas por Meta, además de una
+serie diaria móvil de 28 días. Las conversaciones de Meta no se confunden con
+los resultados confirmados por WhatsApp/CRM.
+
+Las llamadas siguen el flujo oficial de Meta:
+
+- https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/messaging-ads/click-to-whatsapp
+- https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights
+
+## Pendiente posterior
+
+La lectura automática del `referral.source_id` desde mensajes entrantes de
+WhatsApp y su conversión en resultados CRM sigue fuera de este incremento.

@@ -82,16 +82,18 @@ class CreativeHypothesis(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        if not self.env.context.get('allow_workflow_write'):
-            for vals in vals_list:
-                if vals.get('state', 'draft') != 'draft':
-                    raise AccessError(_('El estado inicial de la hipótesis debe ser borrador.'))
+        for vals in vals_list:
+            if vals.get('state', 'draft') != 'draft':
+                raise AccessError(_('El estado inicial de la hipótesis debe ser borrador.'))
         return super().create(vals_list)
 
     def write(self, vals):
-        if 'state' in vals and not self.env.context.get('allow_workflow_write'):
+        if 'state' in vals:
             raise AccessError(_('Usá las acciones de la hipótesis para cambiar su estado.'))
         return super().write(vals)
+
+    def _system_write(self, vals):
+        return super(CreativeHypothesis, self).write(vals)
 
     @api.constrains('brief_id', 'company_id')
     def _check_hypothesis_company(self):
@@ -100,19 +102,19 @@ class CreativeHypothesis(models.Model):
                 raise ValidationError(_('La hipótesis debe usar la compañía de su brief.'))
 
     def action_select(self):
-        self.with_context(allow_workflow_write=True).write({'state': 'selected'})
+        self._system_write({'state': 'selected'})
 
     def action_testing(self):
         for hypothesis in self:
             if not hypothesis.creative_ids:
                 raise ValidationError(_('La hipótesis necesita al menos un creativo para entrar en prueba.'))
-            hypothesis.with_context(allow_workflow_write=True).write({'state': 'testing'})
+            hypothesis._system_write({'state': 'testing'})
 
     def action_learned(self):
         for hypothesis in self:
             if not hypothesis.learning:
                 raise ValidationError(_('Registrá el aprendizaje antes de cerrar la hipótesis.'))
-            hypothesis.with_context(allow_workflow_write=True).write({'state': 'learned'})
+            hypothesis._system_write({'state': 'learned'})
 
     def action_reject(self):
-        self.with_context(allow_workflow_write=True).write({'state': 'rejected'})
+        self._system_write({'state': 'rejected'})

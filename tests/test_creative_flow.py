@@ -146,14 +146,16 @@ class TestCreativeFlow(TransactionCase):
             'name': 'Meta test · Creative Lab',
             'creative_id': self.creative.id,
             'version_id': branch_b.id,
-            'daily_budget': 25.0,
+            'primary_text': 'Medí qué anuncio genera oportunidades reales.',
+            'headline': 'De mensajes a ventas',
+            'lifetime_budget': 25.0,
         })
         with self.assertRaises(AccessError):
             publication.write({'status': 'active'})
-        publication.action_prepare()
-        publication.external_ad_id = 'meta-ad-test-001'
-        publication.action_activate()
-        self.assertEqual(publication.status, 'active')
+        with self.assertRaises(AccessError):
+            publication.with_context(allow_publication_workflow=True).write({
+                'external_ad_id': 'meta-ad-test-001',
+            })
 
         self.env['creative.outcome'].create([
             {

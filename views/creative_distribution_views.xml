@@ -67,14 +67,20 @@
                 <field name="name"/>
                 <field name="creative_id"/>
                 <field name="version_id"/>
+                <field name="meta_connection_id"/>
                 <field name="external_ad_id"/>
                 <field name="spend" sum="Gasto"/>
+                <field name="impressions" sum="Impresiones"/>
+                <field name="clicks" sum="Clics"/>
+                <field name="meta_conversation_count" sum="Conversaciones Meta"/>
                 <field name="conversation_count" sum="Conversaciones"/>
                 <field name="qualified_count" sum="Calificadas"/>
                 <field name="meeting_count" sum="Reuniones"/>
                 <field name="sale_count" sum="Ventas"/>
                 <field name="attributed_revenue" sum="Ingresos"/>
                 <field name="status" widget="badge"/>
+                <field name="remote_effective_status" widget="badge"/>
+                <field name="last_sync_at" optional="hide"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -86,39 +92,103 @@
         <field name="arch" type="xml">
             <form string="Publicación">
                 <header>
-                    <button name="action_prepare" type="object" string="Preparar" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="status != 'draft'"/>
-                    <button name="action_activate" type="object" string="Marcar activa" class="btn-primary" groups="creative_lab.grupo_creative_aprobador" invisible="status not in ['prepared', 'paused']"/>
-                    <button name="action_pause" type="object" string="Pausar" groups="creative_lab.grupo_creative_aprobador" invisible="status != 'active'"/>
-                    <button name="action_archive" type="object" string="Archivar" groups="creative_lab.grupo_creative_aprobador" invisible="status == 'archived'"/>
-                    <field name="status" widget="statusbar" statusbar_visible="draft,prepared,paused,active"/>
+                    <button name="action_prepare" type="object" string="Preparar" class="btn-primary"
+                            groups="creative_lab.grupo_creative_meta_publicador" invisible="status != 'draft'"/>
+                    <button name="action_publish_paused" type="object" string="Crear pausada en Meta" class="btn-primary"
+                            groups="creative_lab.grupo_creative_meta_publicador"
+                            invisible="status not in ['prepared', 'error'] or reconcile_required"/>
+                    <button name="action_reconcile_meta" type="object" string="Conciliar con Meta"
+                            groups="creative_lab.grupo_creative_meta_publicador" invisible="not reconcile_required"/>
+                    <button name="action_sync_meta_metrics" type="object" string="Sincronizar Meta"
+                            groups="creative_lab.grupo_creative_meta_publicador" invisible="not external_ad_id"/>
+                    <button name="action_activate" type="object" string="Activar en Meta" class="btn-primary"
+                            groups="creative_lab.grupo_creative_meta_activador"
+                            invisible="status != 'paused' or delivery_pending or reconcile_required"/>
+                    <button name="action_pause" type="object" string="Pausar en Meta"
+                            groups="creative_lab.grupo_creative_meta_activador"
+                            invisible="status != 'active' and remote_configured_status != 'ACTIVE' and not delivery_pending and not (reconcile_required and reconcile_mode == 'delivery' and external_campaign_id)"/>
+                    <button name="action_archive" type="object" string="Archivar"
+                            groups="creative_lab.grupo_creative_meta_publicador"
+                            invisible="status in ['active', 'archived']"/>
+                    <field name="status" widget="statusbar" statusbar_visible="draft,prepared,paused,active,error"/>
                 </header>
                 <sheet>
                     <div class="oe_title"><h1><field name="name"/></h1></div>
+                    <div class="alert alert-danger" role="alert" invisible="not reconcile_required">
+                        Meta pudo haber procesado una escritura sin que Odoo recibiera la respuesta. No reintentes la publicación hasta conciliarla.
+                    </div>
+                    <div class="alert alert-info" role="alert" invisible="not delivery_pending">
+                        La activación está en una cola durable. La campaña permanece pausada hasta que se valide la jerarquía remota.
+                    </div>
+                    <div class="alert alert-danger" role="alert" invisible="not publish_error">
+                        <field name="publish_error" nolabel="1"/>
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="not sync_error">
+                        <field name="sync_error" nolabel="1"/>
+                    </div>
                     <group>
-                        <group>
-                            <field name="creative_id"/>
-                            <field name="version_id" domain="[('creative_id', '=', creative_id)]"/>
-                            <field name="platform"/>
-                            <field name="destination_phone"/>
+                        <group string="Pieza aprobada">
+                            <field name="creative_id" readonly="status != 'draft'"/>
+                            <field name="version_id" domain="[('creative_id', '=', creative_id)]" readonly="status != 'draft'"/>
+                            <field name="export_id"
+                                   domain="[('version_id', '=', version_id), ('metadata_removed', '=', True)]"
+                                   readonly="status != 'draft'"/>
+                            <field name="meta_connection_id" domain="[('company_id', '=', company_id), ('active', '=', True)]"
+                                   readonly="status != 'draft'"/>
+                            <field name="platform" readonly="status != 'draft'"/>
                             <field name="company_id" groups="base.group_multi_company" readonly="1"/>
                             <field name="currency_id" invisible="1"/>
+                            <field name="ad_currency_id" invisible="1"/>
                         </group>
-                        <group>
-                            <field name="daily_budget"/>
-                            <field name="start_at"/>
-                            <field name="end_at"/>
+                        <group string="Presupuesto seguro">
+                            <field name="budget_type" readonly="status != 'draft'"/>
+                            <field name="daily_budget" invisible="budget_type != 'daily'" readonly="status != 'draft'"/>
+                            <field name="lifetime_budget" invisible="budget_type != 'lifetime'" readonly="status != 'draft'"/>
+                            <field name="start_at" readonly="status != 'draft'"/>
+                            <field name="end_at" readonly="status != 'draft'"/>
+                            <field name="sync_enabled"/>
                             <field name="last_sync_at"/>
                         </group>
                     </group>
                     <notebook>
+                        <page string="Anuncio y segmentación">
+                            <group>
+                                <group>
+                                    <field name="campaign_objective" readonly="status != 'draft'"/>
+                                    <field name="optimization_goal" readonly="status != 'draft'"/>
+                                    <field name="billing_event" readonly="status != 'draft'"/>
+                                    <field name="destination_type" readonly="status != 'draft'"/>
+                                    <field name="special_ad_category" readonly="status != 'draft'"/>
+                                    <field name="destination_phone"/>
+                                </group>
+                                <group>
+                                    <field name="headline" readonly="status != 'draft'"/>
+                                    <field name="description" readonly="status != 'draft'"/>
+                                    <field name="primary_text" readonly="status != 'draft'"/>
+                                    <field name="welcome_message" readonly="status != 'draft'"/>
+                                </group>
+                            </group>
+                            <group string="Targeting JSON">
+                                <field name="targeting_json" nolabel="1" readonly="status != 'draft'"/>
+                            </group>
+                        </page>
                         <page string="Meta Ads">
                             <group>
                                 <field name="meta_account_id"/>
+                                <field name="external_image_hash"/>
                                 <field name="external_campaign_id"/>
                                 <field name="external_adset_id"/>
                                 <field name="external_ad_id"/>
                                 <field name="external_creative_id"/>
-                                <field name="sync_error" invisible="not sync_error"/>
+                                <field name="publish_step"/>
+                                <field name="idempotency_key"/>
+                                <field name="delivery_pending"/>
+                                <field name="reconcile_mode" invisible="not reconcile_required"/>
+                                <field name="last_publish_at"/>
+                                <field name="remote_configured_status"/>
+                                <field name="remote_effective_status"/>
+                                <field name="last_sync_attempt_at"/>
+                                <field name="remote_issues_json" invisible="not remote_issues_json"/>
                             </group>
                         </page>
                         <page string="Rendimiento">
@@ -128,8 +198,16 @@
                                     <field name="impressions"/>
                                     <field name="reach"/>
                                     <field name="clicks"/>
+                                    <field name="inline_link_clicks"/>
                                 </group>
                                 <group>
+                                    <field name="meta_conversation_count"/>
+                                    <field name="ctr"/>
+                                    <field name="cpc"/>
+                                    <field name="cpm"/>
+                                    <field name="frequency"/>
+                                </group>
+                                <group string="Resultados confirmados">
                                     <field name="conversation_count"/>
                                     <field name="qualified_count"/>
                                     <field name="meeting_count"/>
@@ -142,6 +220,42 @@
                                     <field name="cost_per_sale"/>
                                 </group>
                             </group>
+                        </page>
+                        <page string="Métricas diarias">
+                            <field name="metric_ids">
+                                <list create="false" edit="false" delete="false">
+                                    <field name="date"/>
+                                    <field name="spend" sum="Gasto"/>
+                                    <field name="impressions" sum="Impresiones"/>
+                                    <field name="reach" sum="Alcance diario"/>
+                                    <field name="clicks" sum="Clics"/>
+                                    <field name="inline_link_clicks" sum="Clics enlace"/>
+                                    <field name="conversations" sum="Conversaciones Meta"/>
+                                    <field name="ctr"/>
+                                    <field name="cpc"/>
+                                    <field name="cpm"/>
+                                    <field name="frequency"/>
+                                    <field name="synced_at" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Operaciones Meta">
+                            <field name="operation_ids">
+                                <list create="false" edit="false" delete="false"
+                                      decoration-success="state == 'succeeded'"
+                                      decoration-info="state == 'queued'"
+                                      decoration-danger="state in ['failed', 'needs_reconcile']">
+                                    <field name="started_at"/>
+                                    <field name="step"/>
+                                    <field name="state" widget="badge"/>
+                                    <field name="external_id"/>
+                                    <field name="error_code"/>
+                                    <field name="error_subcode"/>
+                                    <field name="fbtrace_id"/>
+                                    <field name="error_message"/>
+                                    <field name="finished_at"/>
+                                </list>
+                            </field>
                         </page>
                         <page string="Resultados comerciales">
                             <field name="outcome_ids" context="{'default_publication_id': id}">
@@ -172,9 +286,12 @@
             <search>
                 <field name="name"/>
                 <field name="creative_id"/>
+                <field name="meta_connection_id"/>
                 <field name="external_ad_id"/>
                 <filter name="publication_live" string="En Meta" domain="[('status', 'in', ['paused', 'active'])]"/>
+                <filter name="publication_active_remote" string="Activas en Meta" domain="[('remote_configured_status', '=', 'ACTIVE')]"/>
                 <filter name="group_status" string="Estado" context="{'group_by': 'status'}"/>
+                <filter name="group_meta_connection" string="Cuenta Meta" context="{'group_by': 'meta_connection_id'}"/>
                 <filter name="group_creative" string="Creativo" context="{'group_by': 'creative_id'}"/>
             </search>
         </field>

@@ -62,7 +62,7 @@ class CreativeAssetExportWizard(models.TransientModel):
             output, extension, mime = self._process(raw)
             safe_base = re.sub(r'[^a-zA-Z0-9_-]+', '-', os.path.splitext(self.version_id.filename)[0]).strip('-')
             filename = '%s-clean.%s' % (safe_base or 'creative', extension)
-            export = self.env['creative.asset.export'].create({
+            export = self.env['creative.asset.export']._create_materialized({
                 'name': _('Export %s') % self.version_id.name,
                 'version_id': self.version_id.id,
                 'file': base64.b64encode(output),

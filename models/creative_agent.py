@@ -320,12 +320,12 @@ class CreativeAgentRun(models.Model):
     def write(self, vals):
         if self._immutable_input_fields.intersection(vals):
             raise AccessError(_('La entrada de una ejecución auditada no puede modificarse.'))
-        if (
-            self._managed_execution_fields.intersection(vals)
-            and not self.env.context.get('allow_execution_write')
-        ):
+        if self._managed_execution_fields.intersection(vals):
             raise AccessError(_('El resultado de la ejecución solo puede escribirlo el motor de agentes.'))
         return super().write(vals)
+
+    def _system_write(self, vals):
+        return super(CreativeAgentRun, self).write(vals)
 
     @api.constrains('brief_id', 'creative_id', 'source_version_id', 'company_id')
     def _check_targets(self):
@@ -358,7 +358,7 @@ class CreativeAgentRun(models.Model):
             return
         started = fields.Datetime.now()
         accounted_cost = 0.0
-        self.with_context(allow_execution_write=True).write({
+        self._system_write({
             'status': 'running',
             'started_at': started,
             'finished_at': False,
@@ -400,10 +400,10 @@ class CreativeAgentRun(models.Model):
                 'tokens_output': result.get('tokens_output', 0),
                 'estimated_cost': accounted_cost,
             }
-            self.with_context(allow_execution_write=True).write(values)
+            self._system_write(values)
         except Exception as exc:  # noqa: BLE001 - el fallo debe quedar auditado
             finished = fields.Datetime.now()
-            self.with_context(allow_execution_write=True).write({
+            self._system_write({
                 'status': 'failed',
                 'finished_at': finished,
                 'duration_seconds': (finished - started).total_seconds(),
@@ -421,7 +421,7 @@ class CreativeAgentRun(models.Model):
         for run in self:
             if run.status not in ('queued', 'failed'):
                 raise ValidationError(_('Solo se puede cancelar una ejecución en cola o fallida.'))
-            run.with_context(allow_execution_write=True).write({'status': 'cancelled'})
+            run._system_write({'status': 'cancelled'})
 
     @api.model
     def _parse_json(self, text):

@@ -89,7 +89,7 @@ class CreativeGenerateWizard(models.TransientModel):
             'input_filename': self.input_filename,
             'input_mime_type': self._guess_input_mime(),
         })
-        self.creative_id.with_context(allow_workflow_write=True).write({'state': 'generating'})
+        self.creative_id._system_write({'state': 'generating'})
         run._execute()
         if run.status != 'succeeded':
             return {
@@ -139,7 +139,7 @@ class CreativeGenerateWizard(models.TransientModel):
             'external_request_id': run.external_request_id,
             'estimated_cost': run.estimated_cost,
         })
-        run.with_context(allow_execution_write=True).write({'result_version_id': version.id})
+        run._system_write({'result_version_id': version.id})
         return {
             'type': 'ir.actions.act_window',
             'name': _('Versión generada'),

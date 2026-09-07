@@ -18,15 +18,27 @@
     </record>
 
     <record id="grupo_creative_aprobador" model="res.groups">
-        <field name="name">Aprobador y publicador</field>
+        <field name="name">Aprobador</field>
         <field name="privilege_id" ref="privilegio_creative_lab"/>
         <field name="implied_ids" eval="[(4, ref('grupo_creative_operador'))]"/>
+    </record>
+
+    <record id="grupo_creative_meta_publicador" model="res.groups">
+        <field name="name">Publicador de Meta</field>
+        <field name="privilege_id" ref="privilegio_creative_lab"/>
+        <field name="implied_ids" eval="[(4, ref('grupo_creative_aprobador'))]"/>
+    </record>
+
+    <record id="grupo_creative_meta_activador" model="res.groups">
+        <field name="name">Activador de Meta</field>
+        <field name="privilege_id" ref="privilegio_creative_lab"/>
+        <field name="implied_ids" eval="[(4, ref('grupo_creative_meta_publicador'))]"/>
     </record>
 
     <record id="grupo_creative_administrador" model="res.groups">
         <field name="name">Administrador</field>
         <field name="privilege_id" ref="privilegio_creative_lab"/>
-        <field name="implied_ids" eval="[(4, ref('grupo_creative_aprobador'))]"/>
+        <field name="implied_ids" eval="[(4, ref('grupo_creative_meta_activador'))]"/>
         <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
     </record>
 
@@ -81,6 +93,24 @@
     <record id="regla_outcome_compania" model="ir.rule">
         <field name="name">Creative Lab: resultados por compañía</field>
         <field name="model_id" ref="model_creative_outcome"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_meta_account_compania" model="ir.rule">
+        <field name="name">Creative Lab: conexiones Meta por compañía</field>
+        <field name="model_id" ref="model_creative_meta_account"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_meta_metric_compania" model="ir.rule">
+        <field name="name">Creative Lab: métricas Meta por compañía</field>
+        <field name="model_id" ref="model_creative_meta_metric_day"/>
+        <field name="global" eval="True"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="regla_meta_operation_compania" model="ir.rule">
+        <field name="name">Creative Lab: operaciones Meta por compañía</field>
+        <field name="model_id" ref="model_creative_meta_operation"/>
         <field name="global" eval="True"/>
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>
     </record>

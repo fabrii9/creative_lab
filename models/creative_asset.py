@@ -141,22 +141,24 @@ class CreativeAsset(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        if not self.env.context.get('allow_workflow_write'):
-            for vals in vals_list:
-                if (
-                    vals.get('state', 'draft') != 'draft'
-                    or vals.get('current_version_id')
-                    or vals.get('approved_by_id')
-                    or vals.get('approved_at')
-                ):
-                    raise AccessError(_('Los creativos deben iniciar como borrador.'))
+        for vals in vals_list:
+            if (
+                vals.get('state', 'draft') != 'draft'
+                or vals.get('current_version_id')
+                or vals.get('approved_by_id')
+                or vals.get('approved_at')
+            ):
+                raise AccessError(_('Los creativos deben iniciar como borrador.'))
         return super().create(vals_list)
 
     def write(self, vals):
         protected = {'state', 'current_version_id', 'approved_by_id', 'approved_at'}
-        if protected.intersection(vals) and not self.env.context.get('allow_workflow_write'):
+        if protected.intersection(vals):
             raise AccessError(_('Usá las acciones de Creative Lab para cambiar aprobación o versión actual.'))
         return super().write(vals)
+
+    def _system_write(self, vals):
+        return super(CreativeAsset, self).write(vals)
 
     @api.constrains('brief_id', 'hypothesis_id')
     def _check_hypothesis_brief(self):
@@ -208,7 +210,7 @@ class CreativeAsset(models.Model):
             if not creative.current_version_id:
                 raise ValidationError(_('Generá o importá una versión antes de enviarla a revisión.'))
             creative.current_version_id.action_submit_review()
-            creative.with_context(allow_workflow_write=True).write({'state': 'review'})
+            creative._system_write({'state': 'review'})
 
     def action_approve(self):
         self._check_approval_access()
@@ -228,17 +230,17 @@ class CreativeAsset(models.Model):
                 'rejection_reason': creative.rejection_reason,
             })
             creative.current_version_id.action_reject()
-            creative.with_context(allow_workflow_write=True).write({'state': 'rejected'})
+            creative._system_write({'state': 'rejected'})
 
     def action_reset_draft(self):
-        self.with_context(allow_workflow_write=True).write({
+        self._system_write({
             'state': 'draft',
             'approved_by_id': False,
             'approved_at': False,
         })
 
     def action_archive(self):
-        self.with_context(allow_workflow_write=True).write({'state': 'archived', 'active': False})
+        self._system_write({'state': 'archived', 'active': False})
 
     def _check_approval_access(self):
         if not self.env.user.has_group('creative_lab.grupo_creative_aprobador'):
@@ -420,14 +422,11 @@ class CreativeAssetVersion(models.Model):
         for incoming in vals_list:
             vals = dict(incoming)
             if (
-                not self.env.context.get('allow_workflow_write')
-                and (
-                    vals.get('state', 'draft') != 'draft'
-                    or vals.get('approval_requested_by_id')
-                    or vals.get('approval_requested_at')
-                    or vals.get('approved_by_id')
-                    or vals.get('approved_at')
-                )
+                vals.get('state', 'draft') != 'draft'
+                or vals.get('approval_requested_by_id')
+                or vals.get('approval_requested_at')
+                or vals.get('approved_by_id')
+                or vals.get('approved_at')
             ):
                 raise AccessError(_('Las versiones deben iniciar como borrador.'))
             creative = self.env['creative.asset'].browse(vals['creative_id']).exists()
@@ -449,7 +448,7 @@ class CreativeAssetVersion(models.Model):
             prepared.append(vals)
         records = super().create(prepared)
         for version in records:
-            version.creative_id.with_context(allow_workflow_write=True).write({
+            version.creative_id._system_write({
                 'current_version_id': version.id,
                 'state': 'approved' if version.state == 'approved' else 'generating',
             })
@@ -466,9 +465,12 @@ class CreativeAssetVersion(models.Model):
             'state', 'approval_requested_by_id', 'approval_requested_at',
             'approved_by_id', 'approved_at',
         }
-        if workflow_fields.intersection(vals) and not self.env.context.get('allow_workflow_write'):
+        if workflow_fields.intersection(vals):
             raise UserError(_('Usá las acciones de revisión, aprobación o rechazo para cambiar la auditoría.'))
         return super().write(vals)
+
+    def _system_write(self, vals):
+        return super(CreativeAssetVersion, self).write(vals)
 
     def unlink(self):
         raise UserError(_('Las versiones no se eliminan porque forman parte de la trazabilidad. Archivalas.'))
@@ -542,7 +544,7 @@ class CreativeAssetVersion(models.Model):
         for version in self:
             if version.state not in ('draft', 'rejected'):
                 raise ValidationError(_('Solo una versión borrador o rechazada puede enviarse a revisión.'))
-            version.with_context(allow_workflow_write=True).write({
+            version._system_write({
                 'state': 'review',
                 'approval_requested_by_id': self.env.user.id,
                 'approval_requested_at': fields.Datetime.now(),
@@ -560,13 +562,13 @@ class CreativeAssetVersion(models.Model):
                 and not self.env.user.has_group('creative_lab.grupo_creative_administrador')
             ):
                 raise AccessError(_('La persona que creó la versión no puede aprobarla.'))
-            version.with_context(allow_workflow_write=True).write({
+            version._system_write({
                 'state': 'approved',
                 'approved_by_id': self.env.user.id,
                 'approved_at': fields.Datetime.now(),
                 'rejection_reason': False,
             })
-            version.creative_id.with_context(allow_workflow_write=True).write({
+            version.creative_id._system_write({
                 'current_version_id': version.id,
                 'state': 'approved',
                 'approved_by_id': self.env.user.id,
@@ -582,7 +584,7 @@ class CreativeAssetVersion(models.Model):
                 raise ValidationError(_('La versión debe estar en revisión.'))
             if not version.rejection_reason:
                 raise ValidationError(_('Indicá el motivo de rechazo en las notas de la versión.'))
-            version.with_context(allow_workflow_write=True).write({'state': 'rejected'})
+            version._system_write({'state': 'rejected'})
 
     def action_open_branch_wizard(self):
         self.ensure_one()

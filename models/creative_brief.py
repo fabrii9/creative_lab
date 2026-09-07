@@ -108,19 +108,19 @@ class CreativeBrief(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
-            if (
-                vals.get('state', 'draft') != 'draft'
-                and not self.env.context.get('allow_workflow_write')
-            ):
+            if vals.get('state', 'draft') != 'draft':
                 raise AccessError(_('El estado inicial del brief debe ser borrador.'))
             if vals.get('code', _('Nuevo')) == _('Nuevo'):
                 vals['code'] = self.env['ir.sequence'].next_by_code('creative.brief') or _('Nuevo')
         return super().create(vals_list)
 
     def write(self, vals):
-        if 'state' in vals and not self.env.context.get('allow_workflow_write'):
+        if 'state' in vals:
             raise AccessError(_('Usá las acciones del brief para cambiar su estado.'))
         return super().write(vals)
+
+    def _system_write(self, vals):
+        return super(CreativeBrief, self).write(vals)
 
     @api.constrains('project_id', 'company_id')
     def _check_project_company(self):
@@ -142,31 +142,31 @@ class CreativeBrief(models.Model):
                     _('Completá los campos mínimos antes de aprobar el brief: %s.')
                     % ', '.join(missing)
                 )
-            brief.with_context(allow_workflow_write=True).write({'state': 'ready'})
+            brief._system_write({'state': 'ready'})
 
     def action_start(self):
         for brief in self:
             if brief.state not in ('ready', 'review'):
                 raise ValidationError(_('Solo un brief aprobado o en revisión puede pasar a producción.'))
-            brief.with_context(allow_workflow_write=True).write({'state': 'in_progress'})
+            brief._system_write({'state': 'in_progress'})
 
     def action_review(self):
         for brief in self:
             if not brief.creative_ids:
                 raise ValidationError(_('Creá al menos un creativo antes de enviar el brief a revisión.'))
-            brief.with_context(allow_workflow_write=True).write({'state': 'review'})
+            brief._system_write({'state': 'review'})
 
     def action_done(self):
         for brief in self:
             if not brief.creative_ids.filtered(lambda item: item.state == 'approved'):
                 raise ValidationError(_('Debe existir al menos un creativo aprobado.'))
-            brief.with_context(allow_workflow_write=True).write({'state': 'done'})
+            brief._system_write({'state': 'done'})
 
     def action_cancel(self):
-        self.with_context(allow_workflow_write=True).write({'state': 'cancelled'})
+        self._system_write({'state': 'cancelled'})
 
     def action_reset_draft(self):
-        self.with_context(allow_workflow_write=True).write({'state': 'draft'})
+        self._system_write({'state': 'draft'})
 
     def action_view_hypotheses(self):
         self.ensure_one()
