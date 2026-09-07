@@ -12,6 +12,7 @@
                 <field name="whatsapp_phone_number"/>
                 <field name="currency_id"/>
                 <field name="api_version"/>
+                <field name="credential_source"/>
                 <field name="token_available"/>
                 <field name="connection_state" widget="badge"/>
                 <field name="publish_enabled"/>
@@ -27,13 +28,27 @@
         <field name="arch" type="xml">
             <form string="Conexión Meta Ads">
                 <header>
-                    <button name="action_test_connection" type="object" string="Probar conexión" class="btn-primary"/>
+                    <button name="action_test_connection" type="object" string="Probar conexión" class="btn-primary"
+                            groups="creative_lab.grupo_creative_administrador"/>
+                    <button name="action_open_credential_wizard" type="object" string="Cargar credenciales"
+                            groups="creative_lab.grupo_creative_administrador"/>
+                    <button name="action_clear_stored_credentials" type="object" string="Borrar credenciales"
+                            groups="creative_lab.grupo_creative_administrador"
+                            invisible="not stored_credentials_available"
+                            confirm="¿Eliminar el Access Token y el App Secret guardados para esta conexión?"/>
                     <field name="connection_state" widget="statusbar" statusbar_visible="untested,ready,error"/>
                 </header>
                 <sheet>
                     <div class="oe_title"><h1><field name="name"/></h1></div>
-                    <div class="alert alert-info" role="alert">
+                    <div class="alert alert-info" role="alert" invisible="credential_source != 'environment'">
                         El token no se guarda en Odoo. Creative Lab lo toma de la variable de entorno indicada.
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="credential_source != 'odoo'">
+                        Las credenciales se guardan en la base de datos y sus backups. Sólo pueden reemplazarse o eliminarse; nunca se muestran nuevamente en la interfaz.
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="credential_source == 'odoo' or not stored_credentials_available">
+                        Hay una credencial guardada en Odoo que no está en uso. Podés eliminarla con “Borrar credenciales”.
                     </div>
                     <div class="alert alert-warning" role="alert" invisible="not activation_enabled">
                         La activación está habilitada: el grupo Activador de Meta podrá iniciar gasto real.
@@ -47,10 +62,13 @@
                             <field name="whatsapp_phone_number"/>
                             <field name="api_version"/>
                         </group>
-                        <group string="Credenciales del contenedor">
-                            <field name="token_env_var"/>
+                        <group string="Credenciales">
+                            <field name="credential_source"/>
+                            <field name="token_env_var" invisible="credential_source != 'environment'"/>
+                            <field name="app_secret_env_var" invisible="credential_source != 'environment'"/>
                             <field name="token_available" readonly="1"/>
-                            <field name="app_secret_env_var"/>
+                            <field name="app_secret_available" readonly="1"/>
+                            <field name="stored_credentials_available" readonly="1"/>
                             <field name="active"/>
                         </group>
                     </group>

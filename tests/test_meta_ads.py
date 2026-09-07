@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from odoo import fields
+from odoo import Command, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 
@@ -34,6 +34,9 @@ class FakeMetaClient:
             'adset-test-id': 'PAUSED',
             'ad-test-id': 'PAUSED',
         }
+
+    def get_permissions(self):
+        return set(CreativeMetaAccount._REQUIRED_META_PERMISSIONS)
 
     def _result(self, step, values=False):
         self.calls.append((step, values))
@@ -294,6 +297,250 @@ class TestCreativeMetaAds(TransactionCase):
         self.assertEqual(self.connection.connection_state, 'untested')
         self.assertFalse(self.connection.currency_id)
 
+    def test_frontend_credentials_can_be_saved_rotated_and_removed(self):
+        wizard = self.env['creative.meta.credential.wizard'].create({
+            'meta_account_id': self.connection.id,
+            'access_token': 'frontend-token-one',
+            'app_secret': 'frontend-app-secret',
+        })
+        wizard.action_save_credentials()
+
+        self.assertFalse(wizard.exists())
+        self.assertEqual(self.connection.credential_source, 'odoo')
+        self.assertTrue(self.connection.token_available)
+        self.assertTrue(self.connection.app_secret_available)
+        self.assertTrue(self.connection.stored_credentials_available)
+        self.assertEqual(self.connection.connection_state, 'untested')
+        self.assertNotIn('access_token', self.connection._fields)
+        client = self.connection._get_client()
+        self.assertEqual(client.access_token, 'frontend-token-one')
+        self.assertEqual(client.app_secret, 'frontend-app-secret')
+
+        self.connection._set_stored_credentials(
+            'frontend-token-two', replace_app_secret=False,
+        )
+        client = self.connection._get_client()
+        self.assertEqual(client.access_token, 'frontend-token-two')
+        self.assertEqual(client.app_secret, 'frontend-app-secret')
+
+        clear_secret_wizard = self.env['creative.meta.credential.wizard'].create({
+            'meta_account_id': self.connection.id,
+            'access_token': 'frontend-token-three',
+            'clear_app_secret': True,
+        })
+        clear_secret_wizard.action_save_credentials()
+        client = self.connection._get_client()
+        self.assertEqual(client.access_token, 'frontend-token-three')
+        self.assertFalse(client.app_secret)
+
+        self.connection.action_clear_stored_credentials()
+        self.assertFalse(self.connection.token_available)
+        self.assertFalse(self.connection.app_secret_available)
+        self.assertFalse(self.connection.stored_credentials_available)
+        self.assertFalse(self.connection._stored_credential())
+        with self.assertRaises(UserError):
+            self.connection._get_client()
+
+    def test_non_admin_cannot_open_or_store_frontend_credentials(self):
+        operator_group = self.env.ref('creative_lab.grupo_creative_operador')
+        operator = self.env['res.users'].create({
+            'name': 'Operador sin secretos',
+            'login': 'creative-meta-operator@example.test',
+            'company_id': self.company.id,
+            'company_ids': [Command.set([self.company.id])],
+            'group_ids': [Command.set([operator_group.id])],
+        })
+        restricted = self.connection.with_user(operator)
+        with self.assertRaises(AccessError):
+            restricted.action_open_credential_wizard()
+        with self.assertRaises(AccessError):
+            restricted._set_stored_credentials('forged-token')
+
+    def test_environment_credentials_remain_supported(self):
+        self.connection.write({
+            'credential_source': 'environment',
+            'token_env_var': 'CREATIVE_LAB_TEST_META_TOKEN',
+            'app_secret_env_var': 'CREATIVE_LAB_TEST_META_SECRET',
+        })
+        with patch.dict('os.environ', {
+            'CREATIVE_LAB_TEST_META_TOKEN': 'environment-token',
+            'CREATIVE_LAB_TEST_META_SECRET': 'environment-secret',
+        }):
+            self.connection.invalidate_recordset([
+                'token_available', 'app_secret_available',
+            ])
+            self.assertTrue(self.connection.token_available)
+            self.assertTrue(self.connection.app_secret_available)
+            client = self.connection._get_client()
+        self.assertEqual(client.access_token, 'environment-token')
+        self.assertEqual(client.app_secret, 'environment-secret')
+
+    def test_connection_test_rejects_a_token_without_management_scope(self):
+        client = Mock()
+        client.get_permissions.return_value = {'ads_read'}
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=client):
+            result = self.connection.action_test_connection()
+
+        self.assertEqual(self.connection.connection_state, 'error')
+        self.assertIn('ads_management', self.connection.last_error)
+        self.assertEqual(result['params']['type'], 'danger')
+        client.get_account.assert_not_called()
+
+    def test_connection_test_accepts_scopes_and_account_write_task(self):
+        client = Mock()
+        client.get_permissions.return_value = set(
+            CreativeMetaAccount._REQUIRED_META_PERMISSIONS
+        )
+        client.get_account.return_value = {
+            'id': 'act_123456789',
+            'name': 'Cuenta verificada',
+            'account_status': 1,
+            'currency': self.company.currency_id.name,
+            'timezone_name': 'America/Argentina/Cordoba',
+            'user_tasks': ['ANALYZE', 'MANAGE'],
+        }
+        client.get_page.return_value = {
+            'id': self.connection.page_id,
+            'name': 'Página verificada',
+        }
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=client):
+            result = self.connection.action_test_connection()
+
+        self.assertEqual(self.connection.connection_state, 'ready')
+        self.assertEqual(self.connection.remote_name, 'Cuenta verificada')
+        self.assertEqual(self.connection.currency_id, self.company.currency_id)
+        self.assertEqual(result['params']['type'], 'success')
+
+    def test_connection_test_rejects_an_account_without_write_task(self):
+        client = Mock()
+        client.get_permissions.return_value = set(
+            CreativeMetaAccount._REQUIRED_META_PERMISSIONS
+        )
+        client.get_account.return_value = {
+            'id': 'act_123456789',
+            'account_status': 1,
+            'user_tasks': ['ANALYZE'],
+        }
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=client):
+            result = self.connection.action_test_connection()
+
+        self.assertEqual(self.connection.connection_state, 'error')
+        self.assertIn('ADVERTISE o MANAGE', self.connection.last_error)
+        self.assertEqual(result['params']['type'], 'danger')
+        client.get_page.assert_not_called()
+
+    def test_credential_mutations_are_safe_while_delivery_may_spend(self):
+        self.connection._set_stored_credentials('safe-token', 'safe-secret')
+        publication = self._publication()
+        publication._system_write({'status': 'active'})
+
+        with patch.object(MetaAdsClient, 'get_permissions', return_value=set(
+            CreativeMetaAccount._REQUIRED_META_PERMISSIONS
+        )), patch.object(MetaAdsClient, 'get_account', return_value={
+            'id': 'act_123456789', 'account_status': 1,
+            'user_tasks': ['ADVERTISE'],
+        }), patch.object(MetaAdsClient, 'get_page', return_value={
+            'id': self.connection.page_id,
+        }):
+            self.connection._set_stored_credentials(
+                'replacement-token', replace_app_secret=False,
+            )
+        self.assertEqual(self.connection._get_client().access_token, 'replacement-token')
+        self.assertEqual(self.connection._get_client().app_secret, 'safe-secret')
+
+        read_only_permissions = set(CreativeMetaAccount._REQUIRED_META_PERMISSIONS)
+        read_only_permissions.remove('ads_management')
+        with patch.object(
+            MetaAdsClient, 'get_permissions', return_value=read_only_permissions,
+        ):
+            with self.assertRaisesRegex(ValidationError, 'ads_management'):
+                self.connection._set_stored_credentials(
+                    'read-only-token', replace_app_secret=False,
+                )
+        self.assertEqual(self.connection._get_client().access_token, 'replacement-token')
+
+        with patch.object(MetaAdsClient, 'get_permissions', return_value=set(
+            CreativeMetaAccount._REQUIRED_META_PERMISSIONS
+        )), patch.object(MetaAdsClient, 'get_account', return_value={
+            'id': 'act_123456789', 'account_status': 1,
+            'user_tasks': ['ANALYZE'],
+        }):
+            with self.assertRaisesRegex(ValidationError, 'ADVERTISE o MANAGE'):
+                self.connection._set_stored_credentials(
+                    'analyst-token', replace_app_secret=False,
+                )
+        self.assertEqual(self.connection._get_client().access_token, 'replacement-token')
+
+        with patch.object(
+            MetaAdsClient, 'get_permissions', side_effect=MetaAdsError('Token inválido'),
+        ):
+            with self.assertRaises(ValidationError):
+                self.connection._set_stored_credentials('invalid-token')
+        self.assertEqual(self.connection._get_client().access_token, 'replacement-token')
+
+        with self.assertRaises(ValidationError):
+            self.connection.action_clear_stored_credentials()
+        with self.assertRaises(ValidationError):
+            self.connection.write({'credential_source': 'environment'})
+
+        publication._system_write({'status': 'paused', 'delivery_pending': True})
+        with patch.object(MetaAdsClient, 'get_permissions', return_value=set(
+            CreativeMetaAccount._REQUIRED_META_PERMISSIONS
+        )), patch.object(MetaAdsClient, 'get_account', return_value={
+            'id': 'act_123456789', 'account_status': 1,
+            'user_tasks': ['MANAGE'],
+        }), patch.object(MetaAdsClient, 'get_page', return_value={
+            'id': self.connection.page_id,
+        }):
+            self.connection._set_stored_credentials(
+                'queued-rotation-token', replace_app_secret=False,
+            )
+        self.assertEqual(self.connection._get_client().access_token, 'queued-rotation-token')
+
+        publication._system_write({
+            'delivery_pending': False,
+            'reconcile_required': True,
+            'reconcile_mode': 'delivery',
+        })
+        with self.assertRaises(ValidationError):
+            self.connection.action_clear_stored_credentials()
+
+    def test_deleting_connection_cascades_hidden_credential(self):
+        account = self.env['creative.meta.account'].create({
+            'name': 'Meta descartable',
+            'company_id': self.company.id,
+            'ad_account_id': '77777777',
+            'page_id': '88888888',
+            'whatsapp_phone_number': '+54 9 11 5555 3333',
+        })
+        account._set_stored_credentials('discarded-token', 'discarded-secret')
+        credential = account._stored_credential()
+        self.assertTrue(credential)
+        account.unlink()
+        self.assertFalse(credential.exists())
+
+    def test_admin_cannot_store_credentials_across_company_rule(self):
+        other_company = self.env['res.company'].create({'name': 'Otra compañía secreta'})
+        other_connection = self.env['creative.meta.account'].sudo().create({
+            'name': 'Meta de otra compañía',
+            'company_id': other_company.id,
+            'ad_account_id': '55555555',
+            'page_id': '66666666',
+            'whatsapp_phone_number': '+54 9 11 5555 2222',
+        })
+        admin_group = self.env.ref('creative_lab.grupo_creative_administrador')
+        limited_admin = self.env['res.users'].create({
+            'name': 'Administrador compañía limitada',
+            'login': 'creative-meta-admin-limited@example.test',
+            'company_id': self.company.id,
+            'company_ids': [Command.set([self.company.id])],
+            'group_ids': [Command.set([admin_group.id])],
+        })
+        with self.assertRaises(AccessError):
+            other_connection.with_user(limited_admin)._set_stored_credentials('forged-token')
+        with self.assertRaises(AccessError):
+            other_connection.with_user(limited_admin).action_test_connection()
+
     def test_export_cannot_be_fabricated_over_rpc(self):
         with self.assertRaises(AccessError):
             self.env['creative.asset.export'].create({
@@ -512,6 +759,38 @@ class TestCreativeMetaAds(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestMetaAdsClient(TransactionCase):
+
+    def test_permissions_returns_only_granted_scopes(self):
+        client = MetaAdsClient('secret')
+        response = Mock()
+        response.status_code = 200
+        response.headers = {}
+        response.json.return_value = {
+            'data': [
+                {'permission': 'ads_management', 'status': 'granted'},
+                {'permission': 'ads_read', 'status': 'declined'},
+                {'permission': 'pages_manage_ads', 'status': 'GRANTED'},
+            ],
+        }
+        client.session.request = Mock(return_value=response)
+
+        self.assertEqual(client.get_permissions(), {
+            'ads_management', 'pages_manage_ads',
+        })
+        _args, kwargs = client.session.request.call_args
+        self.assertEqual(kwargs['params']['fields'], 'permission,status')
+        self.assertEqual(kwargs['params']['limit'], 200)
+
+    def test_permissions_rejects_an_unexpected_response_shape(self):
+        client = MetaAdsClient('secret')
+        response = Mock()
+        response.status_code = 200
+        response.headers = {}
+        response.json.return_value = {'data': {'permission': 'ads_management'}}
+        client.session.request = Mock(return_value=response)
+
+        with self.assertRaisesRegex(MetaAdsError, 'formato inesperado'):
+            client.get_permissions()
 
     def test_error_redacts_token_and_exposes_structured_fields(self):
         client = MetaAdsClient('super-secret-token')

@@ -9,6 +9,30 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from ..services.meta_ads import MetaAdsClient, MetaAdsError
 
 
+class CreativeMetaCredential(models.Model):
+    # Deliberately has no ir.model.access entry or views. Only the guarded
+    # account methods below reach it in sudo mode.
+    _name = 'creative.meta.credential'
+    _description = 'Credencial interna de Meta Ads'
+    _order = 'id'
+    _check_company_auto = True
+
+    _unique_connection = models.Constraint(
+        'UNIQUE(connection_id)',
+        'Solo puede existir una credencial guardada por conexión Meta.',
+    )
+
+    connection_id = fields.Many2one(
+        'creative.meta.account', required=True, index=True, ondelete='cascade',
+        check_company=True,
+    )
+    company_id = fields.Many2one(
+        related='connection_id.company_id', store=True, readonly=True, index=True,
+    )
+    access_token = fields.Char(required=True, copy=False, exportable=False)
+    app_secret = fields.Char(copy=False, exportable=False)
+
+
 class CreativeMetaAccount(models.Model):
     _name = 'creative.meta.account'
     _description = 'Conexión de Creative Lab con Meta Ads'
@@ -20,6 +44,16 @@ class CreativeMetaAccount(models.Model):
         'currency_id', 'timezone_name', 'remote_name', 'remote_account_status',
         'connection_state', 'last_test_at', 'last_error',
     }
+    _CREDENTIAL_CONFIG_FIELDS = {
+        'credential_source', 'token_env_var', 'app_secret_env_var',
+    }
+    _REQUIRED_META_PERMISSIONS = {
+        'ads_management',
+        'ads_read',
+        'pages_manage_ads',
+        'pages_read_engagement',
+    }
+    _WRITE_ACCOUNT_TASKS = {'ADVERTISE', 'MANAGE'}
 
     _unique_account_company = models.Constraint(
         'UNIQUE(company_id, ad_account_id)',
@@ -33,6 +67,16 @@ class CreativeMetaAccount(models.Model):
         index=True, ondelete='cascade',
     )
     api_version = fields.Char(string='Versión Graph API', default='v26.0', required=True)
+    credential_source = fields.Selection(
+        [
+            ('environment', 'Variables de entorno'),
+            ('odoo', 'Guardadas en Odoo'),
+        ],
+        string='Origen de credenciales',
+        default='environment',
+        required=True,
+        tracking=True,
+    )
     token_env_var = fields.Char(
         string='Variable del token', default='CREATIVE_LAB_META_ACCESS_TOKEN', required=True,
         help='Nombre de la variable de entorno del contenedor. El token no se guarda en Odoo.',
@@ -42,6 +86,12 @@ class CreativeMetaAccount(models.Model):
         help='Opcional. Si existe, se envía appsecret_proof en cada llamada.',
     )
     token_available = fields.Boolean(string='Token disponible', compute='_compute_token_available')
+    app_secret_available = fields.Boolean(
+        string='App Secret disponible', compute='_compute_token_available',
+    )
+    stored_credentials_available = fields.Boolean(
+        string='Credencial guardada en Odoo', compute='_compute_token_available',
+    )
     ad_account_id = fields.Char(string='Ad Account ID', required=True, tracking=True)
     page_id = fields.Char(string='Facebook Page ID', required=True, tracking=True)
     instagram_user_id = fields.Char(string='Instagram User ID')
@@ -77,11 +127,30 @@ class CreativeMetaAccount(models.Model):
     )
     max_campaign_days = fields.Integer(string='Duración máxima', default=30)
 
-    @api.depends('token_env_var')
+    @api.depends('credential_source', 'token_env_var', 'app_secret_env_var')
     def _compute_token_available(self):
+        connection_ids = [record._origin.id for record in self if record._origin.id]
+        credentials = self.env['creative.meta.credential'].sudo().search([
+            ('connection_id', 'in', connection_ids),
+        ]) if connection_ids else self.env['creative.meta.credential']
+        by_connection = {item.connection_id.id: item for item in credentials}
         for account in self:
-            token = os.environ.get(account.token_env_var or '')
+            stored_credential = by_connection.get(account._origin.id)
+            account.stored_credentials_available = bool(
+                stored_credential and (stored_credential.access_token or '').strip()
+            )
+            if account.credential_source == 'odoo':
+                credential = stored_credential
+                token = credential.access_token if credential else False
+                app_secret = credential.app_secret if credential else False
+            else:
+                token = os.environ.get(account.token_env_var or '')
+                app_secret = (
+                    os.environ.get(account.app_secret_env_var or '')
+                    if account.app_secret_env_var else False
+                )
             account.token_available = bool(token and token.strip())
+            account.app_secret_available = bool(app_secret and app_secret.strip())
 
     @api.constrains('api_version')
     def _check_api_version(self):
@@ -139,6 +208,13 @@ class CreativeMetaAccount(models.Model):
     def write(self, vals):
         self._check_admin_access()
         vals = dict(vals)
+        changed_credential_config = any(
+            field_name in vals
+            and any(record[field_name] != vals[field_name] for record in self)
+            for field_name in self._CREDENTIAL_CONFIG_FIELDS
+        )
+        if changed_credential_config:
+            self._ensure_credentials_mutable()
         if 'ad_account_id' in vals:
             vals['ad_account_id'] = self._clean_id(vals['ad_account_id'])
         if 'page_id' in vals:
@@ -160,7 +236,7 @@ class CreativeMetaAccount(models.Model):
             ])
             if used:
                 raise ValidationError(_('La identidad de una conexión usada no se puede cambiar; creá otra conexión.'))
-        must_retest = bool((identity | {'token_env_var', 'app_secret_env_var'}).intersection(vals))
+        must_retest = bool((identity | self._CREDENTIAL_CONFIG_FIELDS).intersection(vals))
         result = super().write(vals)
         if must_retest:
             self._system_write({
@@ -188,29 +264,208 @@ class CreativeMetaAccount(models.Model):
         if not self.env.user.has_group('creative_lab.grupo_creative_administrador'):
             raise AccessError(_('Solo un administrador de Creative Lab configura conexiones de Meta.'))
 
+    def _check_credential_access(self):
+        self.ensure_one()
+        self._check_admin_access()
+        self.check_access('write')
+        if self.company_id not in self.env.companies:
+            raise AccessError(_('La conexión Meta no pertenece a una compañía habilitada.'))
+
+    def _unsafe_delivery_publications(self):
+        publications = self.env['creative.publication'].sudo().search([
+            ('meta_connection_id', 'in', self.ids),
+        ])
+        return publications.filtered(lambda publication: (
+            publication.status == 'active'
+            or str(publication.remote_configured_status or '').upper() == 'ACTIVE'
+            or publication.delivery_pending
+            or (
+                publication.reconcile_required
+                and publication.reconcile_mode == 'delivery'
+            )
+        ))
+
+    def _lock_credential_state(self):
+        for account in self.sorted('id'):
+            self.env.cr.execute(
+                'SELECT id FROM creative_meta_account WHERE id = %s FOR UPDATE',
+                [account.id],
+            )
+
+    def _ensure_credentials_mutable(self):
+        self._lock_credential_state()
+        unsafe = self._unsafe_delivery_publications()
+        if unsafe:
+            raise ValidationError(_(
+                'No se pueden cambiar ni borrar credenciales mientras haya una '
+                'campaña activa, una activación en cola o una conciliación de '
+                'entrega. Pausá y conciliá primero todas las publicaciones Meta.'
+            ))
+
+    def _validate_candidate_credentials(self, token, app_secret=False):
+        self.ensure_one()
+        client = MetaAdsClient(token, self.api_version, app_secret=app_secret)
+        try:
+            self._validate_client_permissions(client)
+            account = client.get_account(self.ad_account_id)
+            self._validate_account_tasks(account)
+            page = client.get_page(self.page_id)
+            if str(account.get('account_status') or '') != '1':
+                raise ValidationError(_(
+                    'La cuenta publicitaria no está activa (estado %s).'
+                ) % (account.get('account_status') or '?'))
+            if str(page.get('id') or '') != self.page_id:
+                raise ValidationError(_('El token candidato no devolvió la página configurada.'))
+        except (MetaAdsError, ValidationError) as error:
+            raise ValidationError(_(
+                'No se reemplazaron las credenciales porque el token nuevo no '
+                'pudo validar los permisos, la cuenta y la página: %s'
+            ) % str(error)) from error
+
+    def _validate_client_permissions(self, client):
+        granted = client.get_permissions()
+        missing = sorted(self._REQUIRED_META_PERMISSIONS - granted)
+        if missing:
+            raise ValidationError(_(
+                'Al token le faltan permisos requeridos: %s.'
+            ) % ', '.join(missing))
+
+    def _validate_account_tasks(self, account):
+        if not isinstance(account, dict):
+            raise ValidationError(_(
+                'Meta devolvió un formato inesperado para la cuenta publicitaria.'
+            ))
+        tasks = {
+            str(task).strip().upper()
+            for task in (account.get('user_tasks') or [])
+            if task
+        }
+        if not tasks.intersection(self._WRITE_ACCOUNT_TASKS):
+            raise ValidationError(_(
+                'El usuario del token no tiene la tarea ADVERTISE o MANAGE '
+                'sobre la cuenta publicitaria configurada.'
+            ))
+
     def _system_write(self, vals):
         return super(CreativeMetaAccount, self).write(vals)
 
+    def _stored_credential(self):
+        self.ensure_one()
+        return self.env['creative.meta.credential'].sudo().search([
+            ('connection_id', '=', self.id),
+        ], limit=1)
+
+    def _set_stored_credentials(self, access_token, app_secret=False, replace_app_secret=True):
+        self._check_credential_access()
+        token = str(access_token or '').strip()
+        if not token:
+            raise ValidationError(_('Ingresá un token de acceso de Meta.'))
+        self._lock_credential_state()
+        credential = self._stored_credential()
+        if replace_app_secret:
+            candidate_app_secret = str(app_secret or '').strip() or False
+        else:
+            candidate_app_secret = (credential.app_secret or False) if credential else False
+        if self._unsafe_delivery_publications():
+            self._validate_candidate_credentials(token, candidate_app_secret)
+        values = {'access_token': token}
+        if replace_app_secret:
+            values['app_secret'] = candidate_app_secret
+        if credential:
+            credential.write(values)
+        else:
+            values.update({
+                'connection_id': self.id,
+                'app_secret': str(app_secret or '').strip() or False,
+            })
+            self.env['creative.meta.credential'].sudo().create(values)
+        reset_values = {
+            'currency_id': False,
+            'timezone_name': False,
+            'remote_name': False,
+            'remote_account_status': False,
+            'connection_state': 'untested',
+            'last_test_at': False,
+            'last_error': False,
+        }
+        if self.credential_source != 'odoo':
+            reset_values['credential_source'] = 'odoo'
+        self._system_write(reset_values)
+        self.invalidate_recordset([
+            'token_available', 'app_secret_available', 'stored_credentials_available',
+        ])
+
+    def action_open_credential_wizard(self):
+        self._check_credential_access()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Guardar credenciales de Meta'),
+            'res_model': 'creative.meta.credential.wizard',
+            'view_mode': 'form',
+            'view_id': self.env.ref(
+                'creative_lab.vista_creative_meta_credential_wizard_form'
+            ).id,
+            'target': 'new',
+            'context': {'default_meta_account_id': self.id},
+        }
+
+    def action_clear_stored_credentials(self):
+        self._check_credential_access()
+        self._ensure_credentials_mutable()
+        self._stored_credential().unlink()
+        self._system_write({
+            'currency_id': False,
+            'timezone_name': False,
+            'remote_name': False,
+            'remote_account_status': False,
+            'connection_state': 'untested',
+            'last_test_at': False,
+            'last_error': False,
+        })
+        self.invalidate_recordset([
+            'token_available', 'app_secret_available', 'stored_credentials_available',
+        ])
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Meta Ads'),
+                'message': _('Las credenciales guardadas en Odoo fueron eliminadas.'),
+                'type': 'success',
+                'sticky': False,
+                'next': {'type': 'ir.actions.client', 'tag': 'reload'},
+            },
+        }
+
     def _get_client(self):
         self.ensure_one()
-        token = (os.environ.get(self.token_env_var or '') or '').strip()
-        if not token:
-            raise UserError(_(
+        if self.credential_source == 'odoo':
+            credential = self._stored_credential()
+            token = (credential.access_token or '').strip() if credential else ''
+            app_secret = (credential.app_secret or '').strip() if credential else False
+            missing_message = _('No hay un token guardado para esta conexión Meta.')
+        else:
+            token = (os.environ.get(self.token_env_var or '') or '').strip()
+            app_secret = (
+                (os.environ.get(self.app_secret_env_var or '') or '').strip()
+                if self.app_secret_env_var else False
+            )
+            missing_message = _(
                 'No existe la variable %s dentro del contenedor de Odoo.'
-            ) % (self.token_env_var or '(sin nombre)'))
-        app_secret = (
-            (os.environ.get(self.app_secret_env_var or '') or '').strip()
-            if self.app_secret_env_var else False
-        )
+            ) % (self.token_env_var or '(sin nombre)')
+        if not token:
+            raise UserError(missing_message)
         return MetaAdsClient(token, self.api_version, app_secret=app_secret)
 
     def action_test_connection(self):
         self.ensure_one()
-        self._check_admin_access()
+        self._check_credential_access()
         now = fields.Datetime.now()
         try:
             client = self._get_client()
+            self._validate_client_permissions(client)
             account = client.get_account(self.ad_account_id)
+            self._validate_account_tasks(account)
             page = client.get_page(self.page_id)
             if str(account.get('account_status') or '') != '1':
                 raise ValidationError(_(

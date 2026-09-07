@@ -25,5 +25,6 @@ acceso_run_wizard_operador,creative.agent.run.wizard.operador,model_creative_age
 acceso_export_wizard_operador,creative.asset.export.wizard.operador,model_creative_asset_export_wizard,grupo_creative_operador,1,1,1,1
 acceso_meta_account_admin,creative.meta.account.admin,model_creative_meta_account,grupo_creative_administrador,1,1,1,1
 acceso_meta_account_publicador,creative.meta.account.publicador,model_creative_meta_account,grupo_creative_meta_publicador,1,0,0,0
+acceso_meta_credential_wizard_admin,creative.meta.credential.wizard.admin,model_creative_meta_credential_wizard,grupo_creative_administrador,1,1,1,1
 acceso_meta_metric_publicador,creative.meta.metric.day.publicador,model_creative_meta_metric_day,grupo_creative_meta_publicador,1,0,0,0
 acceso_meta_operation_publicador,creative.meta.operation.publicador,model_creative_meta_operation,grupo_creative_meta_publicador,1,0,0,0

@@ -70,25 +70,46 @@ registro `llm.provider` en el momento de ejecutar.
 ## Meta Ads
 
 Creative Lab usa la Marketing API fijada por conexión (por defecto `v26.0`).
-El token no se persiste en Odoo: debe existir como variable de entorno dentro
-del contenedor, por defecto `CREATIVE_LAB_META_ACCESS_TOKEN`. Se recomienda un
-token de System User con los activos asignados y permisos `ads_management`,
-`ads_read`, `pages_manage_ads`, `pages_read_engagement` y `pages_show_list`.
+Cada conexión permite elegir entre dos orígenes de credenciales:
+
+- **Variables de entorno**, recomendado para máxima separación de secretos. El
+  token debe existir dentro del contenedor, por defecto como
+  `CREATIVE_LAB_META_ACCESS_TOKEN`.
+- **Guardadas en Odoo**, cargadas mediante un asistente exclusivo para
+  administradores. Nunca se vuelven a mostrar en la interfaz, pero se almacenan
+  en la base de datos y quedan incluidas en sus backups.
+
+Se recomienda un token de System User con los activos asignados y permisos
+`ads_management`, `ads_read`, `pages_manage_ads`, `pages_read_engagement` y
+`pages_show_list`. El App Secret es opcional y habilita `appsecret_proof`.
 
 Configuración:
 
 1. Abrir **Creative Lab > Configuración > Conexiones Meta Ads**.
 2. Indicar Ad Account ID, Page ID, Instagram User ID opcional y el número de
    WhatsApp internacional vinculado a esa página.
-3. Configurar topes de presupuesto, probar la conexión y recién entonces
+3. Elegir el origen de credenciales. Para guardarlas en Odoo, guardar primero
+   la conexión, pulsar **Cargar credenciales** y pegar el Access Token y el App
+   Secret opcional; al confirmar, ese origen queda seleccionado automáticamente.
+   El botón **Borrar credenciales** las elimina. Para no perder
+   la capacidad de detener gasto, el sistema bloquea el borrado y el cambio a
+   otra fuente si hay campañas activas, activaciones en cola o conciliaciones de
+   entrega. En esos estados sólo admite rotar hacia un token nuevo que pueda
+   validar previamente los permisos de gestión, la cuenta y la página
+   configuradas. **Probar conexión** también verifica que estén concedidos
+   `ads_management`, `ads_read`, `pages_manage_ads` y
+   `pages_read_engagement`; `pages_show_list` sigue recomendado para administrar
+   o descubrir páginas desde Meta. También exige que el usuario del token tenga
+   la tarea `ADVERTISE` o `MANAGE` sobre la cuenta publicitaria.
+4. Configurar topes de presupuesto, probar la conexión y recién entonces
    habilitar **Permitir crear en pausa**.
-4. Crear una publicación con versión aprobada y una exportación PNG/JPEG con
+5. Crear una publicación con versión aprobada y una exportación PNG/JPEG con
    metadatos eliminados. Completar copy, targeting, presupuesto y fecha final.
    El targeting inicial declara audiencia manual (`advantage_audience: 0`);
    revisarlo explícitamente antes de preparar.
-5. **Preparar** y luego **Crear pausada en Meta**. La imagen, campaña, conjunto,
+6. **Preparar** y luego **Crear pausada en Meta**. La imagen, campaña, conjunto,
    creativo y anuncio se crean explícitamente en `PAUSED`.
-6. Revisar la jerarquía en Ads Manager. La activación es un botón separado,
+7. Revisar la jerarquía en Ads Manager. La activación es un botón separado,
    requiere el grupo Activador, una fecha final, topes válidos y que la conexión
    tenga habilitada la activación. El botón crea una orden durable; un worker la
    procesa en menos de un minuto y activa la campaña al final, después de volver

@@ -173,8 +173,31 @@ class MetaAdsClient:
         return self._request(
             'GET',
             self.account_path(ad_account_id),
-            params={'fields': 'id,name,account_status,disable_reason,currency,timezone_name,spend_cap'},
+            params={
+                'fields': (
+                    'id,name,account_status,disable_reason,currency,'
+                    'timezone_name,spend_cap,user_tasks'
+                ),
+            },
         )
+
+    def get_permissions(self):
+        payload = self._request(
+            'GET',
+            'me/permissions',
+            params={'fields': 'permission,status', 'limit': 200},
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get('data'), list):
+            raise MetaAdsError('Meta devolvió un formato inesperado al consultar permisos.')
+        granted = set()
+        for item in payload['data']:
+            if not isinstance(item, dict):
+                continue
+            permission = str(item.get('permission') or '').strip().lower()
+            status = str(item.get('status') or '').strip().lower()
+            if permission and status == 'granted':
+                granted.add(permission)
+        return granted
 
     def get_page(self, page_id):
         return self._request('GET', page_id, params={'fields': 'id,name'})

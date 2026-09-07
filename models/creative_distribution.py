@@ -1225,6 +1225,8 @@ class CreativePublication(models.Model):
     def _execute_queued_activation(self, operation):
         """Execute a durable activation command selected by the cron worker."""
         self.ensure_one()
+        if self.meta_connection_id:
+            self.meta_connection_id._lock_credential_state()
         operation.sudo().write({'state': 'running'})
         try:
             if not self.delivery_pending or self.status != 'paused':
@@ -1330,6 +1332,8 @@ class CreativePublication(models.Model):
             'SELECT id FROM creative_publication WHERE id = %s FOR UPDATE', [self.id],
         )
         self.invalidate_recordset()
+        if self.meta_connection_id:
+            self.meta_connection_id._lock_credential_state()
         if self.status != 'paused':
             raise ValidationError(_('Solo se puede activar una publicación pausada.'))
         if self.reconcile_required:
