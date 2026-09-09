@@ -235,6 +235,98 @@ class CreativeAsset(models.Model):
             },
         }
 
+    def action_suggest_headline(self):
+        self.ensure_one()
+        self.headline = self._suggest_text(
+            _('Escribí el titular del anuncio: una sola línea, máximo 40 '
+              'caracteres, directo, sin comillas ni explicaciones.'),
+            self.headline,
+        )
+
+    def action_suggest_primary_text(self):
+        self.ensure_one()
+        self.primary_text = self._suggest_text(
+            _('Escribí el texto principal del anuncio: 1 o 2 oraciones, máximo '
+              '125 caracteres, tono cercano, sin comillas ni explicaciones.'),
+            self.primary_text,
+        )
+
+    def action_suggest_call_to_action(self):
+        self.ensure_one()
+        self.call_to_action = self._suggest_text(
+            _('Escribí el llamado a la acción para el botón del anuncio: 2 a 4 '
+              'palabras. Solo el texto del botón, sin comillas ni explicaciones.'),
+            self.call_to_action if self.call_to_action != 'Enviar mensaje' else False,
+        )
+
+    def _suggest_text(self, goal, draft):
+        self.ensure_one()
+        profile = self._get_text_suggestion_profile()
+        instruction = goal
+        if draft:
+            instruction = '%s\n\n%s:\n%s' % (
+                instruction,
+                _('Mejorá y completá este borrador del usuario'),
+                draft,
+            )
+        summary = self._ai_context()
+        if summary:
+            instruction = '%s\n\n%s:\n%s' % (instruction, _('Contexto'), summary)
+        run = self.env['creative.agent.run'].create({
+            'profile_id': profile.id,
+            'company_id': self.company_id.id,
+            'brief_id': self.brief_id.id,
+            'creative_id': self.id,
+            'operation': 'strategy',
+            'input_prompt': instruction,
+        })
+        run._execute()
+        if run.status != 'succeeded' or not run.output_text:
+            raise ValidationError(
+                _('La sugerencia falló: %s')
+                % (run.error_message or _('el agente no devolvió texto.'))
+            )
+        return run.output_text.strip()
+
+    def _get_text_suggestion_profile(self):
+        profiles = self.env['creative.agent.profile'].search([
+            ('company_id', '=', self.company_id.id),
+            ('active', '=', True),
+            ('task_type', '=', 'text'),
+        ])
+        if not profiles:
+            raise ValidationError(_(
+                'No hay ningún agente de texto configurado. Crealo en '
+                'Creative Lab > Configuración > Agentes con tipo de tarea Texto.'
+            ))
+        real_profiles = profiles.filtered(lambda item: item.execution_mode != 'simulation')
+        candidates = real_profiles or profiles
+        director = candidates.filtered(lambda item: item.role == 'creative_director')
+        return (director or candidates)[0]
+
+    def _ai_context(self):
+        brief = self.brief_id
+        hypothesis = self.hypothesis_id
+        lines = []
+        for label, value in (
+            (_('Objetivo'), brief.objective),
+            (_('Oferta'), brief.offer),
+            (_('Público'), brief.target_audience),
+            (_('Ángulo de la hipótesis'), hypothesis.angle),
+            (_('Hook de la hipótesis'), hypothesis.hook),
+            (_('Titular del creativo'), self.headline),
+            (_('Texto principal del creativo'), self.primary_text),
+        ):
+            if value:
+                lines.append('%s: %s' % (label, value))
+        if self.aspect_ratio or self.placement:
+            lines.append('%s: %s / %s' % (
+                _('Formato'),
+                self.aspect_ratio or '-',
+                self.placement or '-',
+            ))
+        return '\n'.join(lines)
+
     def action_submit_review(self):
         for creative in self:
             if not creative.current_version_id:

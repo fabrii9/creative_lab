@@ -45,7 +45,16 @@ botón **Sugerir con IA** que los redacta con un agente de texto (prefiere
 un director creativo real; usa el simulado si no hay ninguno) a partir del
 contexto del brief, la hipótesis y el creativo. Si ya escribiste algo, lo
 toma como borrador y lo mejora. Cada sugerencia queda auditada como una
-ejecución de agente más.
+ejecución de agente más. El mismo botón existe junto a **Titular**,
+**Texto principal** y **Llamado a la acción** en la pestaña Mensaje del
+creativo.
+
+El asistente de generación incluye **Generar también en cuadrado y
+vertical** (activado por defecto): además del formato del creativo, genera
+la misma pieza en 1:1 y 9:16 como creativos hermanos con el mismo prompt y
+copy, para que los formatos no se desalineen. Los hermanos se reutilizan
+en corridas siguientes. Cada formato es una ejecución de agente con su
+propio costo; desmarcá la opción para generar un solo formato.
 
 Desde un brief o creativo también se puede pulsar **Ejecutar agente** para
 probar agentes de estrategia, copy o revisión. Cada ejecución queda auditada

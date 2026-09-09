@@ -303,6 +303,55 @@ class TestCreativeFlow(TransactionCase):
         story = self._generate('Composición editorial para stories')
         self.assertEqual((story.width, story.height), (1080, 1920))
 
+    def test_generation_creates_square_and_vertical_siblings(self):
+        wizard = self.env['creative.generate.wizard'].create({
+            'creative_id': self.creative.id,
+            'operation': 'initial',
+            'agent_profile_id': self.image_agent.id,
+            'prompt': 'Pieza multi-formato',
+        })
+        action = wizard.action_generate()
+        version = self.env['creative.asset.version'].browse(action['res_id'])
+        self.assertEqual(version.creative_id, self.creative)
+        self.assertEqual((version.width, version.height), (1080, 1080))
+
+        siblings = self.env['creative.asset'].search([
+            ('brief_id', '=', self.brief.id),
+            ('aspect_ratio', '=', '9:16'),
+            ('name', 'ilike', 'Creativo atribución'),
+        ])
+        self.assertEqual(len(siblings), 1)
+        sibling = siblings[0]
+        self.assertEqual(sibling.hypothesis_id, self.hypothesis)
+        self.assertEqual(
+            (sibling.current_version_id.width, sibling.current_version_id.height),
+            (1080, 1920),
+        )
+
+        self._generate('Segunda corrida multi-formato')
+        siblings = self.env['creative.asset'].search([
+            ('brief_id', '=', self.brief.id),
+            ('aspect_ratio', '=', '9:16'),
+            ('name', 'ilike', 'Creativo atribución'),
+        ])
+        self.assertEqual(len(siblings), 1)
+        self.assertEqual(len(sibling.version_ids), 2)
+
+    def test_generation_without_sibling_formats(self):
+        wizard = self.env['creative.generate.wizard'].create({
+            'creative_id': self.creative.id,
+            'operation': 'initial',
+            'agent_profile_id': self.image_agent.id,
+            'prompt': 'Solo este formato',
+            'generate_all_formats': False,
+        })
+        wizard.action_generate()
+        siblings = self.env['creative.asset'].search([
+            ('brief_id', '=', self.brief.id),
+            ('id', '!=', self.creative.id),
+        ])
+        self.assertFalse(siblings)
+
     def _provider_profile(self, **overrides):
         provider = self.env['llm.provider'].create({
             'name': 'OpenAI guardrails test',

@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import mimetypes
+import re
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
@@ -14,6 +15,8 @@ class CreativeGenerateWizard(models.TransientModel):
     _name = 'creative.generate.wizard'
     _description = 'Generar, importar o retocar un creativo'
     _inherit = 'creative.lab.mixin'
+
+    TARGET_ASPECT_RATIOS = ('1:1', '9:16')
 
     creative_id = fields.Many2one('creative.asset', required=True, readonly=True)
     company_id = fields.Many2one(related='creative_id.company_id', readonly=True)
@@ -41,6 +44,13 @@ class CreativeGenerateWizard(models.TransientModel):
     negative_prompt = fields.Text(string='Evitar')
     input_file = fields.Binary(string='Archivo fuente', attachment=False)
     input_filename = fields.Char(string='Nombre del archivo')
+    generate_all_formats = fields.Boolean(
+        string='Generar también en cuadrado y vertical',
+        default=True,
+        help='Además del formato de este creativo, genera la misma pieza en '
+             '1:1 y 9:16 como creativos hermanos con el mismo prompt y copy. '
+             'Cada formato es una ejecución de agente con su propio costo.',
+    )
     allowed_agent_profile_ids = fields.Many2many(
         'creative.agent.profile',
         compute='_compute_allowed_agent_profile_ids',
@@ -90,27 +100,7 @@ class CreativeGenerateWizard(models.TransientModel):
         if self.operation == 'import':
             return self._create_imported_version()
 
-        effective_prompt = self.prompt
-        if self.negative_prompt:
-            effective_prompt = '%s\n\n%s: %s' % (
-                effective_prompt,
-                _('Evitar'),
-                self.negative_prompt,
-            )
-        run = self.env['creative.agent.run'].create({
-            'profile_id': self.agent_profile_id.id,
-            'company_id': self.company_id.id,
-            'brief_id': self.creative_id.brief_id.id,
-            'creative_id': self.creative_id.id,
-            'source_version_id': self.source_version_id.id,
-            'operation': self.operation,
-            'input_prompt': effective_prompt,
-            'input_file': self.input_file,
-            'input_filename': self.input_filename,
-            'input_mime_type': self._guess_input_mime(),
-        })
-        self.creative_id._system_write({'state': 'generating'})
-        run._execute()
+        run = self._run_image_generation(self.creative_id, self.operation, self.source_version_id)
         if run.status != 'succeeded':
             return {
                 'type': 'ir.actions.act_window',
@@ -130,16 +120,55 @@ class CreativeGenerateWizard(models.TransientModel):
                 'target': 'current',
             }
 
-        source_sha = self.source_version_id.sha256
+        version = self._version_from_run(self.creative_id, self.operation, run, self.source_version_id)
+        if self.generate_all_formats:
+            self._generate_sibling_formats()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Versión generada'),
+            'res_model': 'creative.asset.version',
+            'res_id': version.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def _run_image_generation(self, creative, operation, source_version):
+        effective_prompt = self.prompt
+        if self.negative_prompt:
+            effective_prompt = '%s\n\n%s: %s' % (
+                effective_prompt,
+                _('Evitar'),
+                self.negative_prompt,
+            )
+        run = self.env['creative.agent.run'].create({
+            'profile_id': self.agent_profile_id.id,
+            'company_id': creative.company_id.id,
+            'brief_id': creative.brief_id.id,
+            'creative_id': creative.id,
+            'source_version_id': source_version.id if source_version else False,
+            'operation': operation,
+            'input_prompt': effective_prompt,
+            'input_file': self.input_file,
+            'input_filename': self.input_filename,
+            'input_mime_type': self._guess_input_mime(),
+        })
+        creative._system_write({'state': 'generating'})
+        run._execute()
+        return run
+
+    def _version_from_run(self, creative, operation, run, source_version):
+        source_sha = source_version.sha256 if source_version else False
         if self.input_file:
             source_sha = hashlib.sha256(base64.b64decode(self.input_file)).hexdigest()
         version = self.env['creative.asset.version'].create({
-            'creative_id': self.creative_id.id,
-            'parent_id': self.source_version_id.id,
-            'operation': self.operation,
+            'creative_id': creative.id,
+            'parent_id': source_version.id if source_version else False,
+            'operation': operation,
             'prompt': self.prompt,
             'negative_prompt': self.negative_prompt,
-            'source_filename': self.input_filename or self.source_version_id.filename,
+            'source_filename': self.input_filename or (
+                source_version.filename if source_version else False
+            ),
             'source_sha256': source_sha,
             'file': run.output_file,
             'filename': run.output_filename,
@@ -149,25 +178,68 @@ class CreativeGenerateWizard(models.TransientModel):
             'provider_snapshot': run.provider_snapshot,
             'model_snapshot': run.model_snapshot,
             'parameters_json': {
-                'operation': self.operation,
+                'operation': operation,
                 'temperature': self.agent_profile_id.temperature,
                 'max_tokens': self.agent_profile_id.max_tokens,
                 'image_size': self.agent_profile_id.image_size,
                 'image_quality': self.agent_profile_id.image_quality,
-                'aspect_ratio': self.creative_id.aspect_ratio,
+                'aspect_ratio': creative.aspect_ratio,
             },
             'external_request_id': run.external_request_id,
             'estimated_cost': run.estimated_cost,
         })
         run._system_write({'result_version_id': version.id})
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Versión generada'),
-            'res_model': 'creative.asset.version',
-            'res_id': version.id,
-            'view_mode': 'form',
-            'target': 'current',
-        }
+        return version
+
+    def _generate_sibling_formats(self):
+        failures = []
+        for ratio in self.TARGET_ASPECT_RATIOS:
+            if ratio == self.creative_id.aspect_ratio:
+                continue
+            sibling = self._find_or_create_sibling(ratio)
+            operation = self.operation
+            source = sibling.current_version_id
+            if operation == 'initial' or (not source and not self.input_file):
+                operation = 'initial'
+                source = self.env['creative.asset.version'].browse()
+            run = self._run_image_generation(sibling, operation, source)
+            if run.status != 'succeeded' or not run.output_file:
+                failures.append('%s: %s' % (
+                    sibling.name,
+                    run.error_message or _('el agente no devolvió una imagen.'),
+                ))
+                continue
+            self._version_from_run(sibling, operation, run, source)
+        if failures:
+            self.creative_id.message_post(
+                body=_('Formatos alternativos que no se pudieron generar: %s')
+                % '; '.join(failures),
+                message_type='comment',
+            )
+
+    def _find_or_create_sibling(self, aspect_ratio):
+        creative = self.creative_id
+        base_name = re.sub(r'\s*·\s*[^·]*\d+:\d+\s*$', '', creative.name)
+        sibling = self.env['creative.asset'].search([
+            ('brief_id', '=', creative.brief_id.id),
+            ('hypothesis_id', '=', creative.hypothesis_id.id),
+            ('aspect_ratio', '=', aspect_ratio),
+            ('name', 'ilike', base_name),
+        ], limit=1)
+        if sibling:
+            return sibling
+        return self.env['creative.asset'].create({
+            'name': '%s · %s' % (base_name, aspect_ratio),
+            'brief_id': creative.brief_id.id,
+            'hypothesis_id': creative.hypothesis_id.id,
+            'owner_id': creative.owner_id.id,
+            'asset_type': creative.asset_type,
+            'aspect_ratio': aspect_ratio,
+            'placement': 'story' if aspect_ratio == '9:16' else 'feed',
+            'headline': creative.headline,
+            'primary_text': creative.primary_text,
+            'call_to_action': creative.call_to_action,
+        })
 
     def action_suggest_prompt(self):
         self.ensure_one()
@@ -196,72 +268,7 @@ class CreativeGenerateWizard(models.TransientModel):
         self.negative_prompt = self._run_suggestion(goal, self.negative_prompt)
 
     def _run_suggestion(self, goal, draft):
-        profile = self._get_suggestion_profile()
-        instruction = goal
-        if draft:
-            instruction = '%s\n\n%s:\n%s' % (
-                instruction,
-                _('Mejorá y completá este borrador del usuario'),
-                draft,
-            )
-        summary = self._suggestion_context()
-        if summary:
-            instruction = '%s\n\n%s:\n%s' % (instruction, _('Contexto'), summary)
-        run = self.env['creative.agent.run'].create({
-            'profile_id': profile.id,
-            'company_id': self.company_id.id,
-            'brief_id': self.creative_id.brief_id.id,
-            'creative_id': self.creative_id.id,
-            'operation': 'strategy',
-            'input_prompt': instruction,
-        })
-        run._execute()
-        if run.status != 'succeeded' or not run.output_text:
-            raise ValidationError(
-                _('La sugerencia falló: %s')
-                % (run.error_message or _('el agente no devolvió texto.'))
-            )
-        return run.output_text.strip()
-
-    def _get_suggestion_profile(self):
-        profiles = self.env['creative.agent.profile'].search([
-            ('company_id', '=', self.company_id.id),
-            ('active', '=', True),
-            ('task_type', '=', 'text'),
-        ])
-        if not profiles:
-            raise ValidationError(_(
-                'No hay ningún agente de texto configurado. Crealo en '
-                'Creative Lab > Configuración > Agentes con tipo de tarea Texto.'
-            ))
-        real_profiles = profiles.filtered(lambda item: item.execution_mode != 'simulation')
-        candidates = real_profiles or profiles
-        director = candidates.filtered(lambda item: item.role == 'creative_director')
-        return (director or candidates)[0]
-
-    def _suggestion_context(self):
-        creative = self.creative_id
-        brief = creative.brief_id
-        hypothesis = creative.hypothesis_id
-        lines = []
-        for label, value in (
-            (_('Objetivo'), brief.objective),
-            (_('Oferta'), brief.offer),
-            (_('Público'), brief.target_audience),
-            (_('Ángulo de la hipótesis'), hypothesis.angle),
-            (_('Hook de la hipótesis'), hypothesis.hook),
-            (_('Titular del creativo'), creative.headline),
-            (_('Texto principal del creativo'), creative.primary_text),
-        ):
-            if value:
-                lines.append('%s: %s' % (label, value))
-        if creative.aspect_ratio or creative.placement:
-            lines.append('%s: %s / %s' % (
-                _('Formato'),
-                creative.aspect_ratio or '-',
-                creative.placement or '-',
-            ))
-        return '\n'.join(lines)
+        return self.creative_id._suggest_text(goal, draft)
 
     def _create_imported_version(self):
         raw = base64.b64decode(self.input_file)

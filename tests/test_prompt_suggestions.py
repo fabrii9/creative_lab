@@ -76,3 +76,25 @@ class TestPromptSuggestions(TransactionCase):
         wizard = self._wizard()
         with self.assertRaises(ValidationError):
             wizard.action_suggest_prompt()
+
+    def test_suggest_headline_fills_creative_copy(self):
+        self.creative.action_suggest_headline()
+        run = self.env['creative.agent.run'].search(
+            [('creative_id', '=', self.creative.id)],
+            order='id desc',
+            limit=1,
+        )
+        self.assertEqual(run.status, 'succeeded', run.error_message)
+        self.assertEqual(self.creative.headline, run.output_text.strip())
+        self.assertIn('Diagnóstico inicial', run.input_prompt)
+
+    def test_suggest_primary_text_improves_existing_draft(self):
+        self.creative.primary_text = 'Medí tus anuncios'
+        self.creative.action_suggest_primary_text()
+        run = self.env['creative.agent.run'].search(
+            [('creative_id', '=', self.creative.id)],
+            order='id desc',
+            limit=1,
+        )
+        self.assertIn('Medí tus anuncios', run.input_prompt)
+        self.assertTrue(self.creative.primary_text)

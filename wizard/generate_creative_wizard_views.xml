@@ -25,6 +25,7 @@
                         <button name="action_suggest_negative_prompt" type="object"
                                 string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
                     </div>
+                    <field name="generate_all_formats"/>
                 </group>
                 <group string="Archivo fuente">
                     <field name="input_file" filename="input_filename"/>

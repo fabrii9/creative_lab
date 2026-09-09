@@ -100,8 +100,20 @@
                         <page string="Mensaje">
                             <group>
                                 <field name="headline"/>
+                                <div>
+                                    <button name="action_suggest_headline" type="object"
+                                            string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                                </div>
                                 <field name="primary_text"/>
+                                <div>
+                                    <button name="action_suggest_primary_text" type="object"
+                                            string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                                </div>
                                 <field name="call_to_action"/>
+                                <div>
+                                    <button name="action_suggest_call_to_action" type="object"
+                                            string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                                </div>
                                 <field name="notes"/>
                             </group>
                         </page>
