@@ -202,9 +202,9 @@ class CreativeGenerateWizard(models.TransientModel):
                 _('Mejorá y completá este borrador del usuario'),
                 draft,
             )
-        context = self._suggestion_context()
-        if context:
-            instruction = '%s\n\n%s:\n%s' % (instruction, _('Contexto'), context)
+        summary = self._suggestion_context()
+        if summary:
+            instruction = '%s\n\n%s:\n%s' % (instruction, _('Contexto'), summary)
         run = self.env['creative.agent.run'].create({
             'profile_id': profile.id,
             'company_id': self.company_id.id,
