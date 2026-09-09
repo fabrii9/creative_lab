@@ -37,6 +37,13 @@ módulo Python personalizado en Odoo Online.
 El simulador crea un SVG determinista que permite validar UI, linaje,
 aprobaciones y descargas sin consumir una API.
 
+Los campos **Prompt o instrucción** y **Evitar** del asistente tienen un
+botón **Sugerir con IA** que los redacta con un agente de texto (prefiere
+un director creativo real; usa el simulado si no hay ninguno) a partir del
+contexto del brief, la hipótesis y el creativo. Si ya escribiste algo, lo
+toma como borrador y lo mejora. Cada sugerencia queda auditada como una
+ejecución de agente más.
+
 Desde un brief o creativo también se puede pulsar **Ejecutar agente** para
 probar agentes de estrategia, copy o revisión. Cada ejecución queda auditada
 con su entrada, salida, proveedor, modelo, duración y consumo informado.

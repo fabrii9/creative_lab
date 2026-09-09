@@ -167,6 +167,100 @@ class CreativeGenerateWizard(models.TransientModel):
             'target': 'current',
         }
 
+    def action_suggest_prompt(self):
+        self.ensure_one()
+        if self.operation in ('edit', 'variation'):
+            goal = _(
+                'Redactá la instrucción de retoque para editar la imagen fuente '
+                'con un modelo de imágenes. Sé específico sobre qué cambiar y '
+                'qué conservar. No agregues explicaciones ni comillas.'
+            )
+        else:
+            goal = _(
+                'Redactá un prompt de generación de imagen listo para usarse en '
+                'un modelo de imágenes. Incluí sujeto, estilo, composición, '
+                'ambiente y relación de aspecto. No agregues explicaciones ni comillas.'
+            )
+        self.prompt = self._run_suggestion(goal, self.prompt)
+
+    def action_suggest_negative_prompt(self):
+        self.ensure_one()
+        goal = _(
+            'Listá en una sola línea, separados por comas, los elementos que el '
+            'modelo de imágenes debe evitar en esta pieza: errores frecuentes, '
+            'elementos fuera de marca y todo lo que baje la calidad. '
+            'No agregues explicaciones ni comillas.'
+        )
+        self.negative_prompt = self._run_suggestion(goal, self.negative_prompt)
+
+    def _run_suggestion(self, goal, draft):
+        profile = self._get_suggestion_profile()
+        instruction = goal
+        if draft:
+            instruction = '%s\n\n%s:\n%s' % (
+                instruction,
+                _('Mejorá y completá este borrador del usuario'),
+                draft,
+            )
+        context = self._suggestion_context()
+        if context:
+            instruction = '%s\n\n%s:\n%s' % (instruction, _('Contexto'), context)
+        run = self.env['creative.agent.run'].create({
+            'profile_id': profile.id,
+            'company_id': self.company_id.id,
+            'brief_id': self.creative_id.brief_id.id,
+            'creative_id': self.creative_id.id,
+            'operation': 'strategy',
+            'input_prompt': instruction,
+        })
+        run._execute()
+        if run.status != 'succeeded' or not run.output_text:
+            raise ValidationError(
+                _('La sugerencia falló: %s')
+                % (run.error_message or _('el agente no devolvió texto.'))
+            )
+        return run.output_text.strip()
+
+    def _get_suggestion_profile(self):
+        profiles = self.env['creative.agent.profile'].search([
+            ('company_id', '=', self.company_id.id),
+            ('active', '=', True),
+            ('task_type', '=', 'text'),
+        ])
+        if not profiles:
+            raise ValidationError(_(
+                'No hay ningún agente de texto configurado. Crealo en '
+                'Creative Lab > Configuración > Agentes con tipo de tarea Texto.'
+            ))
+        real_profiles = profiles.filtered(lambda item: item.execution_mode != 'simulation')
+        candidates = real_profiles or profiles
+        director = candidates.filtered(lambda item: item.role == 'creative_director')
+        return (director or candidates)[0]
+
+    def _suggestion_context(self):
+        creative = self.creative_id
+        brief = creative.brief_id
+        hypothesis = creative.hypothesis_id
+        lines = []
+        for label, value in (
+            (_('Objetivo'), brief.objective),
+            (_('Oferta'), brief.offer),
+            (_('Público'), brief.target_audience),
+            (_('Ángulo de la hipótesis'), hypothesis.angle),
+            (_('Hook de la hipótesis'), hypothesis.hook),
+            (_('Titular del creativo'), creative.headline),
+            (_('Texto principal del creativo'), creative.primary_text),
+        ):
+            if value:
+                lines.append('%s: %s' % (label, value))
+        if creative.aspect_ratio or creative.placement:
+            lines.append('%s: %s / %s' % (
+                _('Formato'),
+                creative.aspect_ratio or '-',
+                creative.placement or '-',
+            ))
+        return '\n'.join(lines)
+
     def _create_imported_version(self):
         raw = base64.b64decode(self.input_file)
         version = self.env['creative.asset.version'].create({

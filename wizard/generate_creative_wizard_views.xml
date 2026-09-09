@@ -16,7 +16,15 @@
                 </group>
                 <group string="Instrucción" invisible="operation == 'import'">
                     <field name="prompt" placeholder="Describí qué generar o qué debe cambiar..."/>
+                    <div>
+                        <button name="action_suggest_prompt" type="object"
+                                string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                    </div>
                     <field name="negative_prompt" placeholder="Elementos que el modelo debe evitar..."/>
+                    <div>
+                        <button name="action_suggest_negative_prompt" type="object"
+                                string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                    </div>
                 </group>
                 <group string="Archivo fuente">
                     <field name="input_file" filename="input_filename"/>
