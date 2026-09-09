@@ -161,6 +161,42 @@ class TestSimpleMode(TransactionCase):
             publication.action_prepare_and_publish()
         self.assertEqual(publication.status, 'draft')
 
+    def test_daily_budget_without_end_date_prepares(self):
+        self._enable_simple_mode()
+        version = self._create_version()
+        export, connection = self._export_and_connection(version)
+        publication = self._publication(version, export=export, connection=connection)
+        publication.write({
+            'budget_type': 'daily',
+            'daily_budget': 10.0,
+            'lifetime_budget': 0.0,
+            'end_at': False,
+        })
+        publication.action_prepare()
+        self.assertEqual(publication.status, 'prepared')
+
+    def test_lifetime_budget_requires_end_date(self):
+        self._enable_simple_mode()
+        version = self._create_version()
+        export, connection = self._export_and_connection(version)
+        publication = self._publication(version, export=export, connection=connection)
+        publication.write({'end_at': False})
+        with self.assertRaises(ValidationError):
+            publication.action_prepare()
+
+    def test_activate_after_publish_queues_activation(self):
+        self._enable_simple_mode()
+        version = self._create_version()
+        export, connection = self._export_and_connection(version)
+        connection.write({'activation_enabled': True})
+        publication = self._publication(version, export=export, connection=connection)
+        publication.write({'activate_after_publish': True})
+        fake = FakeMetaClient()
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=fake):
+            publication.action_prepare_and_publish()
+        self.assertEqual(publication.status, 'paused')
+        self.assertTrue(publication.delivery_pending)
+
     def test_creative_hint_without_versions(self):
         self.assertEqual(
             self.creative.next_step_hint,

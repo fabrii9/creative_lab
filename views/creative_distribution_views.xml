@@ -153,6 +153,11 @@
                             <field name="lifetime_budget" invisible="budget_type != 'lifetime'" readonly="status != 'draft'"/>
                             <field name="start_at" readonly="status != 'draft'"/>
                             <field name="end_at" readonly="status != 'draft'"/>
+                            <field name="activate_after_publish" readonly="status != 'draft'"/>
+                            <div class="alert alert-warning" role="alert"
+                                 invisible="not activate_after_publish or status != 'draft'">
+                                La campaña se activará apenas se cree en Meta: empieza el gasto real.
+                            </div>
                             <field name="sync_enabled"/>
                             <field name="last_sync_at"/>
                         </group>
@@ -168,7 +173,7 @@
                                     <field name="special_ad_category" readonly="status != 'draft'"/>
                                     <field name="destination_phone"/>
                                 </group>
-                                <group>
+                                <group string="Copy del anuncio">
                                     <div>
                                         <button name="action_suggest_copy" type="object"
                                                 string="Sugerir con IA (completa los campos vacíos)"

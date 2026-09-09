@@ -262,6 +262,15 @@ class CreativeAsset(models.Model):
             if suggestions.get(field):
                 self[field] = suggestions[field]
 
+    _SUGGESTION_KEY_ALIASES = {
+        'prompt': ('prompt', 'image_prompt'),
+        'negative_prompt': ('negative_prompt', 'avoid'),
+        'headline': ('headline',),
+        'primary_text': ('primary_text', 'message'),
+        'call_to_action': ('call_to_action', 'cta'),
+        'description': ('description',),
+    }
+
     def _suggest_json(self, goal, keys, kind=None):
         if kind:
             style = self._suggestion_style(kind)
@@ -284,16 +293,41 @@ class CreativeAsset(models.Model):
                 raise ValidationError(_('El agente no devolvió JSON válido.'))
         if not isinstance(payload, dict):
             raise ValidationError(_('El agente no devolvió un objeto JSON.'))
-        suggestions = {
-            key: str(value).strip()
-            for key, value in payload.items()
-            if key in keys and value
-        }
+        suggestions = {}
+        for key in keys:
+            value = self._find_suggestion_value(payload, key)
+            if value:
+                suggestions[key] = value
         if not suggestions:
             raise ValidationError(_(
                 'El agente no devolvió los campos esperados. Reintentá.'
             ))
         return suggestions
+
+    def _find_suggestion_value(self, payload, key, depth=0):
+        """Find a field by alias anywhere in the agent's (possibly nested) JSON.
+
+        Agents configured with their own templates may wrap the answer in their
+        usual shape (e.g. ``{"concepts": [{...}] }``); the copy we need lives
+        inside, so we search recursively.
+        """
+        if depth > 4:
+            return False
+        if isinstance(payload, dict):
+            for alias in self._SUGGESTION_KEY_ALIASES.get(key, (key,)):
+                value = payload.get(alias)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            for child in payload.values():
+                found = self._find_suggestion_value(child, key, depth + 1)
+                if found:
+                    return found
+        elif isinstance(payload, list):
+            for child in payload:
+                found = self._find_suggestion_value(child, key, depth + 1)
+                if found:
+                    return found
+        return False
 
     def _suggest_text(self, goal, draft):
         self.ensure_one()

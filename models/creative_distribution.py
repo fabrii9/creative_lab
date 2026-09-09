@@ -176,6 +176,7 @@ class CreativePublication(models.Model):
         'optimization_goal', 'billing_event', 'destination_type', 'special_ad_category',
         'targeting_json', 'primary_text', 'headline', 'description', 'welcome_message',
         'budget_type', 'daily_budget', 'lifetime_budget', 'start_at', 'end_at',
+        'activate_after_publish',
     }
 
     name = fields.Char(string='Publicación', required=True, tracking=True)
@@ -280,6 +281,9 @@ class CreativePublication(models.Model):
         string='Mensaje sugerido',
         default='Hola, quiero más información',
         required=True,
+        help='Texto que WhatsApp pre-carga cuando la persona toca el anuncio. '
+             'El botón del anuncio es siempre "Enviar mensaje por WhatsApp": '
+             'Meta no admite personalizarlo en este flujo.',
     )
     meta_account_id = fields.Char(string='Ad Account ID', readonly=True, copy=False)
     external_image_hash = fields.Char(string='Image Hash', readonly=True, copy=False)
@@ -310,7 +314,19 @@ class CreativePublication(models.Model):
         string='Presupuesto total', currency_field='ad_currency_id',
     )
     start_at = fields.Datetime(string='Inicio')
-    end_at = fields.Datetime(string='Fin')
+    end_at = fields.Datetime(
+        string='Fin',
+        help='Obligatoria para presupuesto total (Meta la exige). Con presupuesto '
+             'diario puede quedar vacía: la campaña corre hasta que la pauses.',
+    )
+    activate_after_publish = fields.Boolean(
+        string='Activar en Meta al publicar',
+        default=False,
+        help='Si está marcado, después de crear la jerarquía se encola la '
+             'activación y la campaña empieza a gastar apenas el worker valide '
+             'la configuración remota. Requiere la activación habilitada en la '
+             'conexión. Si está desmarcado, todo queda pausado.',
+    )
     publish_step = fields.Selection([
         ('none', 'Sin iniciar'),
         ('image', 'Imagen'),
@@ -572,24 +588,33 @@ class CreativePublication(models.Model):
             amount = self.lifetime_budget
             cap = connection.max_lifetime_budget
             label = _('presupuesto total')
-        if not self.end_at:
-            raise ValidationError(_('Toda publicación Meta requiere una fecha final.'))
+        if self.budget_type == 'lifetime' and not self.end_at:
+            raise ValidationError(_(
+                'Meta exige una fecha final para el presupuesto total. '
+                'Definí la fecha fin o cambiá a presupuesto diario (que puede correr sin fin).'
+            ))
         if amount <= 0:
             raise ValidationError(_('El %s debe ser mayor que cero.') % label)
         if cap <= 0:
-            raise ValidationError(_('Definí un tope de %s en la conexión Meta.') % label)
+            raise ValidationError(_(
+                'Definí un tope de %(label)s en la conexión Meta (Creative Lab > '
+                'Configuración > Conexiones Meta Ads > Controles operativos). Es el '
+                'límite de seguridad: ninguna publicación puede superarlo.'
+            ) % {'label': label})
         if amount > cap:
             raise ValidationError(_('El %s supera el tope de la conexión Meta.') % label)
-        start = self.start_at or fields.Datetime.now()
-        if self.end_at <= start:
-            raise ValidationError(_('La fecha final debe ser futura y posterior al inicio.'))
-        if self.end_at > start + timedelta(days=connection.max_campaign_days):
-            raise ValidationError(_('La duración supera el máximo permitido por la conexión.'))
-        if self.budget_type == 'daily':
+        if self.end_at:
+            start = self.start_at or fields.Datetime.now()
+            if self.end_at <= start:
+                raise ValidationError(_('La fecha final debe ser futura y posterior al inicio.'))
+            if self.end_at > start + timedelta(days=connection.max_campaign_days):
+                raise ValidationError(_('La duración supera el máximo permitido por la conexión.'))
+        if self.budget_type == 'daily' and self.end_at:
             if connection.max_lifetime_budget <= 0:
                 raise ValidationError(_(
                     'Definí también un tope total en la conexión para limitar la exposición del presupuesto diario.'
                 ))
+            start = self.start_at or fields.Datetime.now()
             campaign_days = max(1, math.ceil((self.end_at - start).total_seconds() / 86400))
             projected = self.daily_budget * campaign_days
             if projected > connection.max_lifetime_budget:
@@ -934,6 +959,13 @@ class CreativePublication(models.Model):
             publication.message_post(body=_(
                 'Recursos creados en Meta en estado PAUSED. Ad ID: %s'
             ) % publication.external_ad_id)
+            if publication.activate_after_publish:
+                try:
+                    publication.action_activate()
+                except (UserError, ValidationError) as error:
+                    publication.message_post(body=_(
+                        'Creada en pausa. La activación automática fue rechazada: %s'
+                    ) % error)
             completed += 1
         return self._notification(
             _('Publicación Meta'),
@@ -1275,10 +1307,13 @@ class CreativePublication(models.Model):
             remote_budget = -1
         if remote_budget != expected_budget:
             raise MetaAdsError('El presupuesto remoto cambió; se bloqueó la activación.')
-        expected_end = self._remote_timestamp(self._meta_datetime(self.end_at))
-        remote_end = self._remote_timestamp(adset.get('end_time'))
-        if not remote_end or abs(remote_end - expected_end) > 60:
-            raise MetaAdsError('La fecha final remota cambió; se bloqueó la activación.')
+        if self.end_at:
+            expected_end = self._remote_timestamp(self._meta_datetime(self.end_at))
+            remote_end = self._remote_timestamp(adset.get('end_time'))
+            if not remote_end or abs(remote_end - expected_end) > 60:
+                raise MetaAdsError('La fecha final remota cambió; se bloqueó la activación.')
+        elif adset.get('end_time'):
+            raise MetaAdsError('El conjunto remoto tiene una fecha final que Odoo no registró.')
         expected_targeting = self._json_object(self.targeting_json, _('La segmentación'))
         remote_targeting = adset.get('targeting') or {}
         if not self._json_contains(remote_targeting, expected_targeting):

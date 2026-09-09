@@ -181,3 +181,22 @@ class TestPromptSuggestions(TransactionCase):
             self.creative.action_suggest_copy()
         run = self._last_run()
         self.assertIn('Tono de par a par', run.input_prompt)
+
+    def test_suggest_all_reads_nested_agent_shapes(self):
+        nested = {
+            'text': '{"concepts": [{"headline": "Dejá de adivinar", '
+                    '"primary_text": "Un solo sistema.", '
+                    '"image_prompt": "Taller ordenado con luz cálida"}]}',
+            'provider': 'simulation',
+            'model': 'test-model',
+        }
+        wizard = self._wizard()
+        with patch.object(CreativeLLMBridge, 'execute', return_value=nested):
+            wizard.action_suggest_prompt()
+        self.assertEqual(wizard.prompt, 'Taller ordenado con luz cálida')
+        self.assertFalse(wizard.negative_prompt)
+
+        with patch.object(CreativeLLMBridge, 'execute', return_value=nested):
+            self.creative.action_suggest_copy()
+        self.assertEqual(self.creative.headline, 'Dejá de adivinar')
+        self.assertEqual(self.creative.primary_text, 'Un solo sistema.')
