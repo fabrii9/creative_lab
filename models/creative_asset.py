@@ -256,12 +256,21 @@ class CreativeAsset(models.Model):
               'call_to_action: 2 a 4 palabras para el botón. '
               'Sin comillas extra ni explicaciones.'),
             targets,
+            kind='copy',
         )
         for field in targets:
             if suggestions.get(field):
                 self[field] = suggestions[field]
 
-    def _suggest_json(self, goal, keys):
+    def _suggest_json(self, goal, keys, kind=None):
+        if kind:
+            style = self._suggestion_style(kind)
+            if style:
+                goal = '%s\n\n%s\n%s' % (
+                    goal,
+                    _('Indicaciones globales de estilo:'),
+                    style,
+                )
         text = self._suggest_text(goal, False)
         try:
             payload = self.env['creative.agent.run']._parse_json(text)

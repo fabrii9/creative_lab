@@ -272,7 +272,7 @@ class CreativeGenerateWizard(models.TransientModel):
               'que el modelo debe evitar.'),
             _('Sin comillas extra ni explicaciones.'),
         ])
-        suggestions = self.creative_id._suggest_json(goal, targets)
+        suggestions = self.creative_id._suggest_json(goal, targets, kind='image')
         for field in targets:
             if suggestions.get(field):
                 self[field] = suggestions[field]

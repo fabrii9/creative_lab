@@ -848,6 +848,7 @@ class CreativePublication(models.Model):
               'primary_text: 1 o 2 oraciones, máximo 125 caracteres, tono '
               'cercano, con la oferta del brief. Sin comillas extra ni explicaciones.'),
             targets,
+            kind='ad',
         )
         for field in targets:
             if suggestions.get(field):

@@ -171,3 +171,13 @@ class TestPromptSuggestions(TransactionCase):
             publication.action_suggest_copy()
         self.assertEqual(publication.headline, 'Título manual')
         self.assertEqual(publication.description, 'Diagnóstico gratis de 45 minutos')
+
+    def test_suggest_copy_includes_global_style_instructions(self):
+        self.env['ir.config_parameter'].sudo().set_param(
+            'creative_lab.suggest_copy_instructions',
+            'Tono de par a par, sin signos de exclamación.',
+        )
+        with patch.object(CreativeLLMBridge, 'execute', return_value=COPY_RESPONSE):
+            self.creative.action_suggest_copy()
+        run = self._last_run()
+        self.assertIn('Tono de par a par', run.input_prompt)

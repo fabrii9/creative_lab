@@ -17,3 +17,16 @@ class CreativeLabMixin(models.AbstractModel):
     def _simple_mode_enabled(self):
         value = self.env['ir.config_parameter'].sudo().get_param('creative_lab.simple_mode')
         return str(value).strip().lower() in ('1', 'true')
+
+    _SUGGESTION_STYLE_PARAMS = {
+        'image': 'creative_lab.suggest_image_instructions',
+        'copy': 'creative_lab.suggest_copy_instructions',
+        'ad': 'creative_lab.suggest_ad_instructions',
+    }
+
+    def _suggestion_style(self, kind):
+        param = self._SUGGESTION_STYLE_PARAMS.get(kind)
+        if not param:
+            return ''
+        value = self.env['ir.config_parameter'].sudo().get_param(param)
+        return (value or '').strip()

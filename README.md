@@ -46,7 +46,10 @@ texto que estén vacíos (prompt y "Evitar" en el asistente; titular, texto
 principal y llamado a la acción en el creativo), usando el contexto del
 brief, la hipótesis y el creativo. Lo que ya escribiste no se toca: para
 regenerar un campo, borralo y volvé a pulsar el botón. Cada sugerencia
-queda auditada como una ejecución de agente más.
+queda auditada como una ejecución de agente más. Desde **Ajustes > Creative
+Lab > Sugerencias con IA** se pueden editar las instrucciones globales de
+estilo que recibe el agente en cada botón (prompts de imagen, copy del
+creativo y copy del anuncio Meta), sin tocar código.
 
 El asistente de generación incluye **Generar también en cuadrado y
 vertical** (activado por defecto): además del formato del creativo, genera
