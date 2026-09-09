@@ -15,16 +15,13 @@
                            domain="[('id', 'in', allowed_agent_profile_ids)]"/>
                 </group>
                 <group string="Instrucción" invisible="operation == 'import'">
-                    <field name="prompt" placeholder="Describí qué generar o qué debe cambiar..."/>
                     <div>
                         <button name="action_suggest_prompt" type="object"
-                                string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
+                                string="Sugerir con IA (completa los campos vacíos)"
+                                icon="fa-magic" class="btn-link"/>
                     </div>
+                    <field name="prompt" placeholder="Describí qué generar o qué debe cambiar..."/>
                     <field name="negative_prompt" placeholder="Elementos que el modelo debe evitar..."/>
-                    <div>
-                        <button name="action_suggest_negative_prompt" type="object"
-                                string="Sugerir con IA" icon="fa-magic" class="btn-link"/>
-                    </div>
                     <field name="generate_all_formats"/>
                 </group>
                 <group string="Archivo fuente">

@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import io
+import json
 import mimetypes
 import re
 
@@ -235,29 +236,55 @@ class CreativeAsset(models.Model):
             },
         }
 
-    def action_suggest_headline(self):
+    def action_suggest_copy(self):
         self.ensure_one()
-        self.headline = self._suggest_text(
-            _('Escribí el titular del anuncio: una sola línea, máximo 40 '
-              'caracteres, directo, sin comillas ni explicaciones.'),
-            self.headline,
+        targets = [
+            field
+            for field in ('headline', 'primary_text', 'call_to_action')
+            if not self[field] or self[field] == 'Enviar mensaje'
+        ]
+        if not targets:
+            raise ValidationError(_(
+                'El copy ya está completo. Borrá el campo que quieras regenerar.'
+            ))
+        suggestions = self._suggest_json(
+            _('Redactá el copy del anuncio. Respondé exclusivamente con JSON '
+              'válido con esta forma: '
+              '{"headline": "...", "primary_text": "...", "call_to_action": "..."}. '
+              'headline: una sola línea, máximo 40 caracteres, directo. '
+              'primary_text: 1 o 2 oraciones, máximo 125 caracteres, tono cercano. '
+              'call_to_action: 2 a 4 palabras para el botón. '
+              'Sin comillas extra ni explicaciones.'),
+            targets,
         )
+        for field in targets:
+            if suggestions.get(field):
+                self[field] = suggestions[field]
 
-    def action_suggest_primary_text(self):
-        self.ensure_one()
-        self.primary_text = self._suggest_text(
-            _('Escribí el texto principal del anuncio: 1 o 2 oraciones, máximo '
-              '125 caracteres, tono cercano, sin comillas ni explicaciones.'),
-            self.primary_text,
-        )
-
-    def action_suggest_call_to_action(self):
-        self.ensure_one()
-        self.call_to_action = self._suggest_text(
-            _('Escribí el llamado a la acción para el botón del anuncio: 2 a 4 '
-              'palabras. Solo el texto del botón, sin comillas ni explicaciones.'),
-            self.call_to_action if self.call_to_action != 'Enviar mensaje' else False,
-        )
+    def _suggest_json(self, goal, keys):
+        text = self._suggest_text(goal, False)
+        try:
+            payload = self.env['creative.agent.run']._parse_json(text)
+        except ValidationError:
+            match = re.search(r'\{.*\}', text, flags=re.DOTALL)
+            if not match:
+                raise
+            try:
+                payload = json.loads(match.group(0))
+            except ValueError:
+                raise ValidationError(_('El agente no devolvió JSON válido.'))
+        if not isinstance(payload, dict):
+            raise ValidationError(_('El agente no devolvió un objeto JSON.'))
+        suggestions = {
+            key: str(value).strip()
+            for key, value in payload.items()
+            if key in keys and value
+        }
+        if not suggestions:
+            raise ValidationError(_(
+                'El agente no devolvió los campos esperados. Reintentá.'
+            ))
+        return suggestions
 
     def _suggest_text(self, goal, draft):
         self.ensure_one()

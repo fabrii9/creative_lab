@@ -243,32 +243,39 @@ class CreativeGenerateWizard(models.TransientModel):
 
     def action_suggest_prompt(self):
         self.ensure_one()
+        targets = []
+        if not self.prompt:
+            targets.append('prompt')
+        if not self.negative_prompt:
+            targets.append('negative_prompt')
+        if not targets:
+            raise ValidationError(_(
+                'El prompt y Evitar ya están completos. Borrá el que quieras regenerar.'
+            ))
         if self.operation in ('edit', 'variation'):
-            goal = _(
-                'Redactá la instrucción de retoque para editar la imagen fuente '
-                'con un modelo de imágenes. Sé específico sobre qué cambiar y '
-                'qué conservar. No agregues explicaciones ni comillas.'
+            prompt_rule = _(
+                'prompt: la instrucción de retoque para editar la imagen fuente, '
+                'específica sobre qué cambiar y qué conservar.'
             )
         else:
-            goal = _(
-                'Redactá un prompt de generación de imagen listo para usarse en '
-                'un modelo de imágenes. Incluí sujeto, estilo, composición, '
-                'ambiente y relación de aspecto. No agregues explicaciones ni comillas.'
+            prompt_rule = _(
+                'prompt: instrucción de generación de imagen lista para un modelo '
+                'de imágenes, con sujeto, estilo, composición, ambiente y relación '
+                'de aspecto.'
             )
-        self.prompt = self._run_suggestion(goal, self.prompt)
-
-    def action_suggest_negative_prompt(self):
-        self.ensure_one()
-        goal = _(
-            'Listá en una sola línea, separados por comas, los elementos que el '
-            'modelo de imágenes debe evitar en esta pieza: errores frecuentes, '
-            'elementos fuera de marca y todo lo que baje la calidad. '
-            'No agregues explicaciones ni comillas.'
-        )
-        self.negative_prompt = self._run_suggestion(goal, self.negative_prompt)
-
-    def _run_suggestion(self, goal, draft):
-        return self.creative_id._suggest_text(goal, draft)
+        goal = '\n\n'.join([
+            _('Redactá los campos del pedido de imagen. Respondé '
+              'exclusivamente con JSON válido con esta forma: '
+              '{"prompt": "...", "negative_prompt": "..."}.'),
+            prompt_rule,
+            _('negative_prompt: una sola línea, separada por comas, con lo '
+              'que el modelo debe evitar.'),
+            _('Sin comillas extra ni explicaciones.'),
+        ])
+        suggestions = self.creative_id._suggest_json(goal, targets)
+        for field in targets:
+            if suggestions.get(field):
+                self[field] = suggestions[field]
 
     def _create_imported_version(self):
         raw = base64.b64decode(self.input_file)

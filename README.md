@@ -40,14 +40,13 @@ las versiones simuladas también sirven como fuente para retocarlas o
 revisarlas con proveedores reales (las versiones SVG generadas por
 versiones viejas del módulo no la admiten: hay que generar una base nueva).
 
-Los campos **Prompt o instrucción** y **Evitar** del asistente tienen un
-botón **Sugerir con IA** que los redacta con un agente de texto (prefiere
-un director creativo real; usa el simulado si no hay ninguno) a partir del
-contexto del brief, la hipótesis y el creativo. Si ya escribiste algo, lo
-toma como borrador y lo mejora. Cada sugerencia queda auditada como una
-ejecución de agente más. El mismo botón existe junto a **Titular**,
-**Texto principal** y **Llamado a la acción** en la pestaña Mensaje del
-creativo.
+El asistente y la pestaña **Mensaje** del creativo tienen un botón
+**Sugerir con IA** que completa en una sola ejecución todos los campos de
+texto que estén vacíos (prompt y "Evitar" en el asistente; titular, texto
+principal y llamado a la acción en el creativo), usando el contexto del
+brief, la hipótesis y el creativo. Lo que ya escribiste no se toca: para
+regenerar un campo, borralo y volvé a pulsar el botón. Cada sugerencia
+queda auditada como una ejecución de agente más.
 
 El asistente de generación incluye **Generar también en cuadrado y
 vertical** (activado por defecto): además del formato del creativo, genera
