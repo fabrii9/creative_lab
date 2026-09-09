@@ -7,6 +7,8 @@ import mimetypes
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
+from ..services.llm_bridge import CreativeLLMBridge
+
 
 class CreativeGenerateWizard(models.TransientModel):
     _name = 'creative.generate.wizard'
@@ -313,6 +315,24 @@ class CreativeGenerateWizard(models.TransientModel):
             raise ValidationError(_('Un retoque o variación necesita una versión o archivo fuente.'))
         if self.source_version_id and self.source_version_id.creative_id != self.creative_id:
             raise ValidationError(_('La versión fuente no pertenece al creativo.'))
+        self._validate_source_mime()
+
+    def _validate_source_mime(self):
+        if self.operation not in ('edit', 'variation'):
+            return
+        if self.agent_profile_id.execution_mode != 'provider':
+            return
+        if self.input_file:
+            source_mime = self._guess_input_mime()
+        else:
+            source_mime = self.source_version_id.mime_type
+        if source_mime and source_mime not in CreativeLLMBridge.SUPPORTED_EDIT_MIMES:
+            raise ValidationError(_(
+                'La imagen fuente (%(mime)s) no la admiten los proveedores: '
+                'solo PNG, JPEG o WebP. Si es una versión vieja del simulador '
+                'en SVG, generá una base nueva (el simulador ahora produce '
+                'PNG) o importá un archivo raster como fuente.'
+            ) % {'mime': source_mime})
 
     def _guess_input_mime(self):
         if not self.input_filename:

@@ -139,7 +139,7 @@ class TestCreativeFlow(TransactionCase):
         exported = self.env['creative.asset.export'].browse(export_action['res_id'])
         self.assertEqual(exported.version_id, branch_b)
         self.assertTrue(exported.metadata_removed)
-        self.assertEqual(exported.mime_type, 'image/svg+xml')
+        self.assertEqual(exported.mime_type, 'image/png')
         self.assertTrue(exported.file)
 
         publication = self.env['creative.publication'].create({
@@ -195,6 +195,36 @@ class TestCreativeFlow(TransactionCase):
         })
         with self.assertRaises(ValidationError):
             incomplete.action_mark_ready()
+
+    def test_edit_wizard_rejects_svg_source_for_real_agent(self):
+        svg = base64.b64encode(
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
+        )
+        legacy = self.env['creative.asset.version'].create({
+            'creative_id': self.creative.id,
+            'operation': 'import',
+            'prompt': 'SVG heredado del simulador',
+            'file': svg,
+            'filename': 'legacy.svg',
+            'provider_snapshot': 'simulation',
+        })
+        agent = self._provider_profile(
+            name='Imagen real',
+            role='image_generator',
+            task_type='image',
+            output_format='binary',
+            output_schema=False,
+            fixed_cost_usd=0.04,
+        )
+        wizard = self.env['creative.generate.wizard'].create({
+            'creative_id': self.creative.id,
+            'operation': 'edit',
+            'source_version_id': legacy.id,
+            'agent_profile_id': agent.id,
+            'prompt': 'Cambiá el fondo',
+        })
+        with self.assertRaises(ValidationError):
+            wizard.action_generate()
 
     def test_parent_must_belong_to_same_creative(self):
         root = self._generate('Raíz')

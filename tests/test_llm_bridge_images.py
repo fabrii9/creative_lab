@@ -159,3 +159,37 @@ class TestLLMBridgeImages(TransactionCase):
         self.assertEqual(payload['response_format'], 'b64_json')
         self.assertNotIn('quality', payload)
         self.assertEqual(post.call_args.kwargs['timeout'], 29)
+
+    def test_simulator_returns_a_real_png(self):
+        from PIL import Image
+        import io as io_module
+
+        run = SimpleNamespace(
+            profile_id=SimpleNamespace(task_type='image', model_alias=False),
+            creative_id=SimpleNamespace(aspect_ratio='4:5', name='Pieza de prueba'),
+        )
+        result = CreativeLLMBridge(self.env)._simulate(run, 'Prompt de prueba')
+
+        self.assertEqual(result['mime_type'], 'image/png')
+        self.assertTrue(result['filename'].endswith('.png'))
+        with Image.open(io_module.BytesIO(base64.b64decode(result['file']))) as image:
+            self.assertEqual(image.format, 'PNG')
+            self.assertEqual(image.size, (1080, 1350))
+
+    def test_generate_image_rejects_unsupported_source_before_http(self):
+        from odoo.exceptions import UserError
+
+        bridge = CreativeLLMBridge(self.env)
+        run = self._run('1:1', source=True)
+        run.input_mime_type = 'image/svg+xml'
+        run.input_filename = 'source.svg'
+
+        with patch.object(llm_bridge_module.requests, 'post') as post:
+            with self.assertRaises(UserError):
+                bridge._generate_image(
+                    self._provider('gpt-image-2'),
+                    self._profile(),
+                    run,
+                    'Retocá el anuncio',
+                )
+            post.assert_not_called()

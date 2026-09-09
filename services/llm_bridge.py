@@ -2,8 +2,9 @@
 
 import base64
 import hashlib
+import io
 import json
-from html import escape
+import textwrap
 
 import requests
 
@@ -22,6 +23,7 @@ class CreativeLLMBridge:
     OPENAI_COMPATIBLE = {'openai', 'custom'}
     VISION_OPENAI_COMPATIBLE = {'openai', 'kimi', 'kimi_code', 'groq', 'custom'}
     SUPPORTED_VISION_MIMES = {'image/png', 'image/jpeg', 'image/webp', 'image/gif'}
+    SUPPORTED_EDIT_MIMES = {'image/png', 'image/jpeg', 'image/webp'}
     GPT_IMAGE_SIZES = {
         '1:1': '1024x1024',
         '4:5': '1024x1280',
@@ -171,72 +173,73 @@ class CreativeLLMBridge:
                 'model': run.profile_id.model_alias or 'creative-simulator-v1',
                 'request_id': 'sim-%s' % digest[:16],
             }
-        svg = self._simulation_svg(run, prompt, digest)
+        png = self._simulation_png(run, prompt, digest)
         return {
-            'file': base64.b64encode(svg.encode('utf-8')),
-            'filename': 'creative-simulation-%s.svg' % digest[:8],
-            'mime_type': 'image/svg+xml',
+            'file': base64.b64encode(png),
+            'filename': 'creative-simulation-%s.png' % digest[:8],
+            'mime_type': 'image/png',
             'provider': 'simulation',
             'model': run.profile_id.model_alias or 'image-simulator-v1',
             'request_id': 'sim-%s' % digest[:16],
         }
 
-    def _simulation_svg(self, run, prompt, digest):
-        safe_title = escape((run.creative_id.name or 'Creative Lab')[:48])
-        safe_prompt = escape(' '.join(prompt.split())[:120])
-        accent = '#%s' % digest[:6]
-        accent_two = '#%s' % digest[6:12]
+    def _simulation_png(self, run, prompt, digest):
+        from PIL import Image, ImageDraw
+
         width, height = {
             '1:1': (1080, 1080),
             '4:5': (1080, 1350),
             '9:16': (1080, 1920),
             '1.91:1': (1200, 628),
         }.get(run.creative_id.aspect_ratio, (1080, 1080))
+        accent = [int(digest[index:index + 2], 16) for index in (0, 2, 4)]
+        accent_two = [int(digest[index:index + 2], 16) for index in (6, 8, 10)]
+        gradient = Image.new('RGB', (1, height))
+        gradient.putdata([
+            tuple(
+                round(start + (end - start) * (y / max(height - 1, 1)))
+                for start, end in zip(accent, accent_two)
+            )
+            for y in range(height)
+        ])
+        image = gradient.resize((width, height))
+        draw = ImageDraw.Draw(image)
         margin = 80
-        panel_width = width - (margin * 2)
-        panel_height = height - (margin * 2)
-        title_y = int(height * 0.33)
-        prompt_y = int(height * 0.40)
-        prompt_height = int(height * 0.28)
-        footer_y = height - 150
-        return '''<svg xmlns="http://www.w3.org/2000/svg"
-  width="%(width)s" height="%(height)s" viewBox="0 0 %(width)s %(height)s">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="%(accent)s"/>
-      <stop offset="1" stop-color="%(accent_two)s"/>
-    </linearGradient>
-  </defs>
-  <rect width="%(width)s" height="%(height)s" fill="url(#g)"/>
-  <rect x="%(margin)s" y="%(margin)s"
-        width="%(panel_width)s" height="%(panel_height)s"
-        rx="40" fill="#111827" fill-opacity=".76"/>
-  <text x="130" y="190" fill="#F9FAFB" font-family="Arial, sans-serif" font-size="34">CREATIVE LAB · SIMULACIÓN</text>
-  <text x="130" y="%(title_y)s" fill="#FFFFFF"
-        font-family="Arial, sans-serif" font-size="72" font-weight="700">%(title)s</text>
-  <foreignObject x="130" y="%(prompt_y)s" width="%(prompt_width)s" height="%(prompt_height)s">
-    <div xmlns="http://www.w3.org/1999/xhtml"
-         style="font: 36px Arial, sans-serif; color: #E5E7EB; line-height: 1.35;">%(prompt)s</div>
-  </foreignObject>
-  <text x="130" y="%(footer_y)s" fill="#D1D5DB"
-        font-family="Arial, sans-serif" font-size="28">fingerprint %(digest)s</text>
-</svg>''' % {
-            'width': width,
-            'height': height,
-            'margin': margin,
-            'panel_width': panel_width,
-            'panel_height': panel_height,
-            'title_y': title_y,
-            'prompt_y': prompt_y,
-            'prompt_width': width - 260,
-            'prompt_height': prompt_height,
-            'footer_y': footer_y,
-            'accent': accent,
-            'accent_two': accent_two,
-            'title': safe_title,
-            'prompt': safe_prompt,
-            'digest': digest[:12],
-        }
+        draw.rounded_rectangle(
+            [margin, margin, width - margin, height - margin],
+            radius=40,
+            fill=(17, 24, 39),
+        )
+        title_font = self._simulation_font(64)
+        title = (run.creative_id.name or 'Creative Lab')[:48]
+        while title and draw.textlength(title, font=title_font) > width - 260:
+            title = title[:-1].rstrip()
+        draw.text((130, 140), 'CREATIVE LAB · SIMULACIÓN', font=self._simulation_font(34), fill=(249, 250, 251))
+        draw.text((130, int(height * 0.33)), title, font=title_font, fill=(255, 255, 255))
+        prompt_font = self._simulation_font(32)
+        prompt_lines = textwrap.wrap(' '.join(prompt.split())[:300], width=48)[:8]
+        prompt_y = int(height * 0.42)
+        for line in prompt_lines:
+            draw.text((130, prompt_y), line, font=prompt_font, fill=(229, 231, 235))
+            prompt_y += 46
+        draw.text(
+            (130, height - 150),
+            'fingerprint %s' % digest[:12],
+            font=self._simulation_font(28),
+            fill=(209, 213, 219),
+        )
+        output = io.BytesIO()
+        image.save(output, format='PNG')
+        return output.getvalue()
+
+    @staticmethod
+    def _simulation_font(size):
+        from PIL import ImageFont
+
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
 
     def _generate_text(self, provider, profile, run, prompt):
         if profile.task_type == 'analysis' and (
@@ -353,6 +356,15 @@ class CreativeLLMBridge:
         }
 
     def _generate_image(self, provider, profile, run, prompt):
+        if self._source_bytes(run):
+            source_mime = self._source_mime(run)
+            if source_mime not in self.SUPPORTED_EDIT_MIMES:
+                raise UserError(_(
+                    'La imagen fuente (%(mime)s) no la admiten los proveedores: '
+                    'solo PNG, JPEG o WebP. Si es una versión vieja del simulador '
+                    'en SVG, generá una base nueva (el simulador ahora produce '
+                    'PNG) o importá un archivo raster como fuente.'
+                ) % {'mime': source_mime})
         if provider.provider_type == 'gemini':
             return self._generate_gemini_image(provider, profile, run, prompt)
         if provider.provider_type in self.OPENAI_COMPATIBLE:

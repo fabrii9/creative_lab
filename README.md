@@ -34,8 +34,11 @@ módulo Python personalizado en Odoo Online.
 6. Elegir el agente simulado, escribir un prompt y generar.
 7. Enviar la versión a revisión, aprobarla y exportarla.
 
-El simulador crea un SVG determinista que permite validar UI, linaje,
-aprobaciones y descargas sin consumir una API.
+El simulador crea un PNG determinista que permite validar UI, linaje,
+aprobaciones y descargas sin consumir una API. Al ser una imagen raster,
+las versiones simuladas también sirven como fuente para retocarlas o
+revisarlas con proveedores reales (las versiones SVG generadas por
+versiones viejas del módulo no la admiten: hay que generar una base nueva).
 
 Los campos **Prompt o instrucción** y **Evitar** del asistente tienen un
 botón **Sugerir con IA** que los redacta con un agente de texto (prefiere
