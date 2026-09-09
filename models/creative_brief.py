@@ -7,7 +7,7 @@ from odoo.exceptions import AccessError, ValidationError
 class CreativeBrief(models.Model):
     _name = 'creative.brief'
     _description = 'Brief creativo'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'creative.lab.mixin']
     _order = 'id desc'
     _check_company_auto = True
 
@@ -97,6 +97,7 @@ class CreativeBrief(models.Model):
     hypothesis_count = fields.Integer(compute='_compute_counts')
     creative_count = fields.Integer(compute='_compute_counts')
     version_count = fields.Integer(compute='_compute_counts')
+    next_step_hint = fields.Char(compute='_compute_next_step_hint', compute_sudo=True)
 
     @api.depends('hypothesis_ids', 'creative_ids', 'creative_ids.version_ids')
     def _compute_counts(self):
@@ -104,6 +105,29 @@ class CreativeBrief(models.Model):
             brief.hypothesis_count = len(brief.hypothesis_ids)
             brief.creative_count = len(brief.creative_ids)
             brief.version_count = sum(len(item.version_ids) for item in brief.creative_ids)
+
+    @api.depends('objective', 'offer', 'target_audience', 'state', 'creative_ids')
+    def _compute_next_step_hint(self):
+        for brief in self:
+            hint = False
+            if not (brief.objective and brief.offer and brief.target_audience):
+                hint = _('Completá objetivo, oferta y público para poder avanzar.')
+            elif brief.state in ('done', 'cancelled'):
+                hint = False
+            elif brief.simple_mode:
+                if not brief.creative_ids:
+                    hint = _('Creá el primer creativo desde el botón Creativos.')
+                else:
+                    hint = _('Listo para exportar y publicar.')
+            elif brief.state == 'draft':
+                hint = _('Aprobá el brief para habilitar la producción.')
+            elif not brief.creative_ids:
+                hint = _('Creá el primer creativo desde el botón Creativos.')
+            elif not brief.creative_ids.filtered(lambda item: item.state == 'approved'):
+                hint = _('Generá y aprobá al menos una versión.')
+            else:
+                hint = _('Listo para exportar y publicar.')
+            brief.next_step_hint = hint
 
     @api.model_create_multi
     def create(self, vals_list):

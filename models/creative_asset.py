@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover - Pillow forma parte del runtime normal 
 class CreativeAsset(models.Model):
     _name = 'creative.asset'
     _description = 'Creativo'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'creative.lab.mixin']
     _order = 'id desc'
     _check_company_auto = True
 
@@ -131,6 +131,7 @@ class CreativeAsset(models.Model):
     approved_by_id = fields.Many2one('res.users', string='Aprobado por', readonly=True, copy=False)
     approved_at = fields.Datetime(string='Aprobado el', readonly=True, copy=False)
     rejection_reason = fields.Text(string='Motivo de rechazo', copy=False)
+    next_step_hint = fields.Char(compute='_compute_next_step_hint', compute_sudo=True)
 
     @api.depends('version_ids', 'publication_ids', 'publication_ids.outcome_ids')
     def _compute_counts(self):
@@ -138,6 +139,28 @@ class CreativeAsset(models.Model):
             creative.version_count = len(creative.version_ids)
             creative.publication_count = len(creative.publication_ids)
             creative.outcome_count = sum(len(publication.outcome_ids) for publication in creative.publication_ids)
+
+    @api.depends('state', 'version_ids', 'current_version_id')
+    def _compute_next_step_hint(self):
+        for creative in self:
+            hint = False
+            current = creative.current_version_id
+            if creative.state == 'archived':
+                hint = False
+            elif not creative.version_ids:
+                hint = _('Generá la primera versión con el botón Generar / retocar.')
+            elif current and current.export_ids:
+                hint = _('Creá una publicación en Meta o descargá el archivo.')
+            elif current and current.state == 'approved':
+                hint = _('Exportá la versión limpia para usarla o publicarla.')
+            elif current and current.state == 'review':
+                hint = _('Esperando aprobación.')
+            elif current and current.state in ('draft', 'rejected'):
+                if creative.simple_mode:
+                    hint = _('Generá una nueva versión para aprobarla automáticamente.')
+                else:
+                    hint = _('Enviá la versión a revisión.')
+            creative.next_step_hint = hint
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -186,11 +209,18 @@ class CreativeAsset(models.Model):
 
     def action_open_generate_wizard(self):
         self.ensure_one()
-        profile = self.env['creative.agent.profile'].search([
+        domain = [
             ('company_id', '=', self.company_id.id),
             ('task_type', 'in', ('image', 'edit')),
             ('active', '=', True),
-        ], limit=1)
+        ]
+        profile = self.env['creative.agent.profile'].search(domain, limit=1)
+        if profile and self._simple_mode_enabled() and profile.execution_mode == 'simulation':
+            real_profile = self.env['creative.agent.profile'].search(
+                domain + [('execution_mode', '!=', 'simulation')],
+                limit=1,
+            )
+            profile = real_profile or profile
         return {
             'type': 'ir.actions.act_window',
             'name': _('Generar o retocar creativo'),
@@ -298,7 +328,7 @@ class CreativeAsset(models.Model):
 class CreativeAssetVersion(models.Model):
     _name = 'creative.asset.version'
     _description = 'Versión de activo creativo'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'creative.lab.mixin']
     _order = 'creative_id, revision desc, id desc'
     _check_company_auto = True
 
@@ -447,11 +477,26 @@ class CreativeAssetVersion(models.Model):
             self._prepare_binary_metadata(vals)
             prepared.append(vals)
         records = super().create(prepared)
+        if self._simple_mode_enabled():
+            for version in records:
+                version._system_write({
+                    'state': 'approved',
+                    'approved_by_id': self.env.user.id,
+                    'approved_at': fields.Datetime.now(),
+                    'rejection_reason': False,
+                })
         for version in records:
-            version.creative_id._system_write({
+            values = {
                 'current_version_id': version.id,
                 'state': 'approved' if version.state == 'approved' else 'generating',
-            })
+            }
+            if version.state == 'approved':
+                values.update({
+                    'approved_by_id': version.approved_by_id.id,
+                    'approved_at': version.approved_at,
+                    'rejection_reason': False,
+                })
+            version.creative_id._system_write(values)
         return records
 
     def write(self, vals):

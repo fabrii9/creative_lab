@@ -137,6 +137,25 @@ Las llamadas siguen el flujo oficial de Meta:
 - https://developers.facebook.com/documentation/ads-commerce/marketing-api/ad-creative/messaging-ads/click-to-whatsapp
 - https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights
 
+## Modo simple (operador único)
+
+En **Ajustes > Creative Lab** el administrador puede activar **Modo simple
+(operador único)** para trabajar sin circuito de aprobación cuando una sola
+persona opera todo el flujo. El modo queda apagado por defecto y al activarlo:
+
+- Las versiones nuevas (generadas o importadas) se aprueban automáticamente
+  con el usuario actual como aprobador, y el creativo queda aprobado al
+  instante, listo para exportar.
+- El asistente **Generar / retocar** oculta los agentes de simulación si hay
+  al menos un agente real disponible, y el agente sugerido por defecto deja
+  de ser el simulado.
+- En la publicación, **Preparar** y **Crear pausada en Meta** se fusionan en
+  un solo botón **Crear en Meta (pausada)**, con las mismas validaciones de
+  siempre. La activación del gasto sigue siendo un paso separado.
+
+Independientemente del modo, los formularios de brief, creativo y publicación
+muestran un cartel con el próximo paso sugerido según el estado del registro.
+
 ## Pendiente posterior
 
 La lectura automática del `referral.source_id` desde mensajes entrantes de

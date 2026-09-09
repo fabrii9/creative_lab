@@ -38,6 +38,7 @@ metadatos y registrar publicaciones y resultados comerciales.
         'views/creative_meta_views.xml',
         'views/creative_distribution_views.xml',
         'views/project_project_views.xml',
+        'views/res_config_settings_views.xml',
         'views/creative_lab_menus.xml',
     ],
     'application': True,

@@ -11,6 +11,7 @@ from odoo.exceptions import ValidationError
 class CreativeGenerateWizard(models.TransientModel):
     _name = 'creative.generate.wizard'
     _description = 'Generar, importar o retocar un creativo'
+    _inherit = 'creative.lab.mixin'
 
     creative_id = fields.Many2one('creative.asset', required=True, readonly=True)
     company_id = fields.Many2one(related='creative_id.company_id', readonly=True)
@@ -38,6 +39,23 @@ class CreativeGenerateWizard(models.TransientModel):
     negative_prompt = fields.Text(string='Evitar')
     input_file = fields.Binary(string='Archivo fuente', attachment=False)
     input_filename = fields.Char(string='Nombre del archivo')
+    allowed_agent_profile_ids = fields.Many2many(
+        'creative.agent.profile',
+        compute='_compute_allowed_agent_profile_ids',
+        compute_sudo=True,
+    )
+
+    @api.depends('creative_id')
+    def _compute_allowed_agent_profile_ids(self):
+        for wizard in self:
+            profiles = self.env['creative.agent.profile'].search([
+                ('company_id', '=', wizard.company_id.id),
+                ('active', '=', True),
+            ])
+            if wizard.simple_mode:
+                real_profiles = profiles.filtered(lambda item: item.execution_mode != 'simulation')
+                profiles = real_profiles or profiles
+            wizard.allowed_agent_profile_ids = profiles
 
     @api.model
     def default_get(self, fields_list):

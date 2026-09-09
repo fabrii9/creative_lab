@@ -66,6 +66,9 @@
                     <field name="state" widget="statusbar" statusbar_visible="draft,ready,in_progress,review,done"/>
                 </header>
                 <sheet>
+                    <div class="alert alert-info" role="status" invisible="not next_step_hint">
+                        <field name="next_step_hint" nolabel="1" readonly="1"/>
+                    </div>
                     <div class="oe_button_box" name="button_box">
                         <button name="action_view_hypotheses" type="object" class="oe_stat_button" icon="fa-lightbulb-o">
                             <field name="hypothesis_count" widget="statinfo" string="Hipótesis"/>

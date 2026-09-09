@@ -93,10 +93,13 @@
             <form string="Publicación">
                 <header>
                     <button name="action_prepare" type="object" string="Preparar" class="btn-primary"
-                            groups="creative_lab.grupo_creative_meta_publicador" invisible="status != 'draft'"/>
+                            groups="creative_lab.grupo_creative_meta_publicador" invisible="status != 'draft' or simple_mode"/>
                     <button name="action_publish_paused" type="object" string="Crear pausada en Meta" class="btn-primary"
                             groups="creative_lab.grupo_creative_meta_publicador"
-                            invisible="status not in ['prepared', 'error'] or reconcile_required"/>
+                            invisible="status not in ['prepared', 'error'] or reconcile_required or simple_mode"/>
+                    <button name="action_prepare_and_publish" type="object" string="Crear en Meta (pausada)" class="btn-primary"
+                            groups="creative_lab.grupo_creative_meta_publicador"
+                            invisible="not simple_mode or status not in ['draft', 'error'] or reconcile_required"/>
                     <button name="action_reconcile_meta" type="object" string="Conciliar con Meta"
                             groups="creative_lab.grupo_creative_meta_publicador" invisible="not reconcile_required"/>
                     <button name="action_sync_meta_metrics" type="object" string="Sincronizar Meta"
@@ -113,6 +116,10 @@
                     <field name="status" widget="statusbar" statusbar_visible="draft,prepared,paused,active,error"/>
                 </header>
                 <sheet>
+                    <field name="simple_mode" invisible="1"/>
+                    <div class="alert alert-info" role="status" invisible="not next_step_hint">
+                        <field name="next_step_hint" nolabel="1" readonly="1"/>
+                    </div>
                     <div class="oe_title"><h1><field name="name"/></h1></div>
                     <div class="alert alert-danger" role="alert" invisible="not reconcile_required">
                         Meta pudo haber procesado una escritura sin que Odoo recibiera la respuesta. No reintentes la publicación hasta conciliarla.

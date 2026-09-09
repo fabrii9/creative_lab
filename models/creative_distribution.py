@@ -148,7 +148,7 @@ class CreativeAssetExport(models.Model):
 class CreativePublication(models.Model):
     _name = 'creative.publication'
     _description = 'Publicación de creativo'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'creative.lab.mixin']
     _order = 'id desc'
     _check_company_auto = True
 
@@ -382,6 +382,30 @@ class CreativePublication(models.Model):
     cost_per_sale = fields.Monetary(
         compute='_compute_unit_costs', currency_field='ad_currency_id',
     )
+    next_step_hint = fields.Char(compute='_compute_next_step_hint', compute_sudo=True)
+
+    @api.depends('status', 'reconcile_required')
+    def _compute_next_step_hint(self):
+        for publication in self:
+            hint = {
+                'draft': _(
+                    'Revisá presupuesto y segmentación, luego creá la campaña '
+                    'en Meta (quedará pausada).'
+                ),
+                'prepared': _('Creá la campaña pausada en Meta.'),
+                'paused': _(
+                    'Revisá la campaña en Ads Manager. Cuando esté todo bien, activá el gasto.'
+                ),
+                'active': _('Campaña activa: monitoreá las métricas de rendimiento.'),
+            }.get(publication.status)
+            if publication.status == 'error':
+                if publication.reconcile_required:
+                    hint = _(
+                        'Hay una escritura incierta: usá Conciliar con Meta antes de reintentar.'
+                    )
+                else:
+                    hint = _('Revisá el error de publicación y reintentá.')
+            publication.next_step_hint = hint
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -813,6 +837,14 @@ class CreativePublication(models.Model):
             if not publication.idempotency_key:
                 values['idempotency_key'] = uuid.uuid4().hex
             publication._system_write(values)
+
+    def action_prepare_and_publish(self):
+        self.ensure_one()
+        if not self._simple_mode_enabled():
+            raise UserError(_('La creación en un paso solo está disponible en modo simple.'))
+        if self.status == 'draft':
+            self.action_prepare()
+        return self.action_publish_paused()
 
     def action_publish_paused(self):
         self._check_publisher_access()

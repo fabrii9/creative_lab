@@ -10,7 +10,9 @@
                     <field name="company_id" invisible="1"/>
                     <field name="operation"/>
                     <field name="source_version_id" invisible="operation == 'initial'"/>
-                    <field name="agent_profile_id" invisible="operation == 'import'"/>
+                    <field name="allowed_agent_profile_ids" invisible="1"/>
+                    <field name="agent_profile_id" invisible="operation == 'import'"
+                           domain="[('id', 'in', allowed_agent_profile_ids)]"/>
                 </group>
                 <group string="Instrucción" invisible="operation == 'import'">
                     <field name="prompt" placeholder="Describí qué generar o qué debe cambiar..."/>
