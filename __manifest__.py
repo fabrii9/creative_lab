@@ -19,6 +19,7 @@ metadatos y registrar publicaciones y resultados comerciales.
         'project',
         'crm',
         'utm',
+        'whatsapp',
         'llm_connector',
     ],
     'data': [

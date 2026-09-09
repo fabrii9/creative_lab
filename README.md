@@ -177,7 +177,18 @@ persona opera todo el flujo. El modo queda apagado por defecto y al activarlo:
 Independientemente del modo, los formularios de brief, creativo y publicación
 muestran un cartel con el próximo paso sugerido según el estado del registro.
 
+## Atribución WhatsApp
+
+Con el módulo oficial `whatsapp` instalado (dependencia de Creative Lab),
+cada mensaje entrante que Meta marca con `referral` (anuncios
+click-to-WhatsApp) guarda `source_id`, `source_url` y `ctwa_clid` en el
+mensaje. Si el `source_id` coincide con el anuncio de una publicación, se
+crea automáticamente un resultado **Conversación iniciada** confirmado,
+vinculado al contacto del canal y al lead/oportunidad del CRM si existe.
+El mismo mensaje nunca se atribuye dos veces, y la publicación registra el
+evento en su historial.
+
 ## Pendiente posterior
 
-La lectura automática del `referral.source_id` desde mensajes entrantes de
-WhatsApp y su conversión en resultados CRM sigue fuera de este incremento.
+La clasificación automática de las conversaciones (lead, calificado, venta)
+con un agente sigue fuera de este incremento.

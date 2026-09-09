@@ -9,3 +9,4 @@ from . import creative_meta
 from . import creative_distribution
 from . import project_project
 from . import res_config_settings
+from . import whatsapp_message
