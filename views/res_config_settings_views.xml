@@ -20,19 +20,19 @@
                         <setting string="Prompts de imagen"
                                  help="Se inyectan en el botón Sugerir con IA del asistente Generar / retocar."
                                  id="creative_lab_suggest_image_setting">
-                            <field name="creative_lab_suggest_image_instructions"
+                            <field name="creative_lab_suggest_image_instructions" widget="text"
                                    placeholder="Ej.: estilo sobrio, paleta turquesa y grafito, nunca mostrar precios..."/>
                         </setting>
                         <setting string="Copy del creativo"
                                  help="Se inyectan en el botón Sugerir copy con IA del creativo."
                                  id="creative_lab_suggest_copy_setting">
-                            <field name="creative_lab_suggest_copy_instructions"
+                            <field name="creative_lab_suggest_copy_instructions" widget="text"
                                    placeholder="Ej.: tono de par a par, sin signos de exclamación, hablar de 'sistema de gestión'..."/>
                         </setting>
                         <setting string="Copy del anuncio Meta"
                                  help="Se inyectan en el botón Sugerir con IA de la publicación."
                                  id="creative_lab_suggest_ad_setting">
-                            <field name="creative_lab_suggest_ad_instructions"
+                            <field name="creative_lab_suggest_ad_instructions" widget="text"
                                    placeholder="Ej.: cerrar siempre con la oferta del brief, WhatsApp como destino..."/>
                         </setting>
                     </block>

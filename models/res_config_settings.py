@@ -16,7 +16,7 @@ class ResConfigSettings(models.TransientModel):
             'campaña en Meta se fusionan en un solo paso.'
         ),
     )
-    creative_lab_suggest_image_instructions = fields.Text(
+    creative_lab_suggest_image_instructions = fields.Char(
         string='Instrucciones para prompts de imagen',
         config_parameter='creative_lab.suggest_image_instructions',
         help=(
@@ -25,7 +25,7 @@ class ResConfigSettings(models.TransientModel):
             'paleta, qué evitar siempre.'
         ),
     )
-    creative_lab_suggest_copy_instructions = fields.Text(
+    creative_lab_suggest_copy_instructions = fields.Char(
         string='Instrucciones para copy del creativo',
         config_parameter='creative_lab.suggest_copy_instructions',
         help=(
@@ -34,7 +34,7 @@ class ResConfigSettings(models.TransientModel):
             'prohibidas, estructura preferida.'
         ),
     )
-    creative_lab_suggest_ad_instructions = fields.Text(
+    creative_lab_suggest_ad_instructions = fields.Char(
         string='Instrucciones para copy del anuncio Meta',
         config_parameter='creative_lab.suggest_ad_instructions',
         help=(
