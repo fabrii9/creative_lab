@@ -823,6 +823,36 @@ class CreativePublication(models.Model):
             },
         }
 
+    def action_suggest_copy(self):
+        self.ensure_one()
+        if self.status != 'draft':
+            raise ValidationError(_(
+                'El copy solo puede sugerirse mientras la publicación es borrador.'
+            ))
+        targets = [
+            field
+            for field in ('headline', 'description', 'primary_text')
+            if not (self[field] or '').strip()
+        ]
+        if not targets:
+            raise ValidationError(_(
+                'El anuncio ya tiene título, descripción y texto principal. '
+                'Borrá el que quieras regenerar.'
+            ))
+        suggestions = self.creative_id._suggest_json(
+            _('Redactá el texto del anuncio de Meta Ads con destino a WhatsApp. '
+              'Respondé exclusivamente con JSON válido con esta forma: '
+              '{"headline": "...", "description": "...", "primary_text": "..."}. '
+              'headline: máximo 40 caracteres, directo. '
+              'description: máximo 30 caracteres, refuerza el título. '
+              'primary_text: 1 o 2 oraciones, máximo 125 caracteres, tono '
+              'cercano, con la oferta del brief. Sin comillas extra ni explicaciones.'),
+            targets,
+        )
+        for field in targets:
+            if suggestions.get(field):
+                self[field] = suggestions[field]
+
     def action_prepare(self):
         self._check_publisher_access()
         for publication in self:

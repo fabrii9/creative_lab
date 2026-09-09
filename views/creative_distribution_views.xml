@@ -169,6 +169,12 @@
                                     <field name="destination_phone"/>
                                 </group>
                                 <group>
+                                    <div>
+                                        <button name="action_suggest_copy" type="object"
+                                                string="Sugerir con IA (completa los campos vacíos)"
+                                                icon="fa-magic" class="btn-link"
+                                                invisible="status != 'draft'"/>
+                                    </div>
                                     <field name="headline" readonly="status != 'draft'"/>
                                     <field name="description" readonly="status != 'draft'"/>
                                     <field name="primary_text" readonly="status != 'draft'"/>

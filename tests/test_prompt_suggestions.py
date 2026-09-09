@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import base64
 from unittest.mock import patch
 
 from odoo.exceptions import ValidationError
@@ -18,6 +19,14 @@ COPY_RESPONSE = {
     'text': '{"headline": "Dejá de adivinar tus números", '
             '"primary_text": "Un solo sistema para stock, ventas y caja.", '
             '"call_to_action": "Pedir diagnóstico"}',
+    'provider': 'simulation',
+    'model': 'test-model',
+}
+
+AD_RESPONSE = {
+    'text': '{"headline": "Tu stock, en tiempo real", '
+            '"description": "Diagnóstico gratis de 45 minutos", '
+            '"primary_text": "Un solo sistema para stock, ventas y caja."}',
     'provider': 'simulation',
     'model': 'test-model',
 }
@@ -125,3 +134,40 @@ class TestPromptSuggestions(TransactionCase):
             self.creative.primary_text,
             'Un solo sistema para stock, ventas y caja.',
         )
+
+    def _publication(self):
+        png = base64.b64encode(base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        ))
+        version = self.env['creative.asset.version'].create({
+            'creative_id': self.creative.id,
+            'operation': 'import',
+            'prompt': 'Imagen de prueba',
+            'file': png,
+            'filename': 'pub-test.png',
+            'mime_type': 'image/png',
+        })
+        return self.env['creative.publication'].create({
+            'name': 'Publicación sugerencias test',
+            'creative_id': self.creative.id,
+            'version_id': version.id,
+        })
+
+    def test_suggest_copy_on_publication_fills_empty_fields(self):
+        publication = self._publication()
+        with patch.object(CreativeLLMBridge, 'execute', return_value=AD_RESPONSE):
+            publication.action_suggest_copy()
+        self.assertEqual(publication.headline, 'Tu stock, en tiempo real')
+        self.assertEqual(publication.description, 'Diagnóstico gratis de 45 minutos')
+        self.assertEqual(
+            publication.primary_text,
+            'Un solo sistema para stock, ventas y caja.',
+        )
+
+    def test_suggest_copy_on_publication_keeps_filled_fields(self):
+        publication = self._publication()
+        publication.headline = 'Título manual'
+        with patch.object(CreativeLLMBridge, 'execute', return_value=AD_RESPONSE):
+            publication.action_suggest_copy()
+        self.assertEqual(publication.headline, 'Título manual')
+        self.assertEqual(publication.description, 'Diagnóstico gratis de 45 minutos')
