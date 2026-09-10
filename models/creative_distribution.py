@@ -645,6 +645,8 @@ class CreativePublication(models.Model):
             'objective': self.campaign_objective,
             'buying_type': 'AUCTION',
             'special_ad_categories': categories,
+            # Meta requires this campaign-level flag when budgets are on ad sets.
+            'is_adset_budget_sharing_enabled': False,
             'status': 'PAUSED',
         }
 
@@ -663,9 +665,6 @@ class CreativePublication(models.Model):
             'optimization_goal': self.optimization_goal,
             'bid_strategy': 'LOWEST_COST_WITHOUT_CAP',
             'destination_type': self.destination_type,
-            # Meta lo exige explícito cuando el presupuesto vive en el conjunto
-            # y no en la campaña.
-            'is_adset_budget_sharing_enabled': False,
             'promoted_object': promoted,
             'targeting': targeting,
             'status': 'PAUSED',
