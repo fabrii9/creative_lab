@@ -44,6 +44,22 @@ Reglas:
 - El dolor en el nombre de la hipótesis es corto y en las palabras del
   mercado, nunca jerga técnica.
 
+## Nombre automático en el formulario de creativo
+
+Los creativos nuevos creados desde el formulario proponen **Nombre automático**.
+El formato es `📦 AV1-H1-C17 · Stock que no cierra · Consciente del problema · S3 · Imagen · Feed · 1:1`.
+`C17` es el ID estable del creativo de origen, no un contador reiniciado por
+hipótesis; los formatos hermanos comparten ese código. `S3` indica sofisticación.
+Sin códigos AV/H en los nombres se usan los IDs de brief e hipótesis como referencia.
+El dolor se resume a 48 caracteres y el nombre refleja tipo, ubicación y proporción.
+
+Al cambiar la configuración del creativo se actualiza el nombre si la opción está
+activada. Para un nombre libre, desmarcala. Los registros existentes mantienen sus
+nombres; **Actualizar nombre desde configuración** activa esta nomenclatura para
+el registro elegido. Las versiones y publicaciones ya creadas conservan sus snapshots.
+Los hermanos nuevos quedan vinculados por registro para poder reutilizarlos aun
+cuando cambie el nombre.
+
 ## Cómo escalar
 
 - **Avatar nuevo** → próximo número de AV libre (`AV4`), emoji nuevo, brief

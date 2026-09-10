@@ -80,7 +80,13 @@
                     <field name="preview_file" widget="image" class="oe_avatar" filename="preview_filename" options="{'size': [256, 256]}"/>
                     <div class="oe_title">
                         <label for="name"/>
-                        <h1><field name="name"/></h1>
+                        <h1><field name="name" readonly="auto_name"/></h1>
+                        <div class="d-flex align-items-center gap-2">
+                            <field name="auto_name"/>
+                            <label for="auto_name"/>
+                        </div>
+                        <button name="action_use_automatic_name" type="object"
+                                string="Actualizar nombre desde configuración" class="btn-link"/>
                     </div>
                     <group>
                         <group>
@@ -98,17 +104,18 @@
                     </group>
                     <notebook>
                         <page string="Mensaje">
-                            <group>
-                                <div>
-                                    <button name="action_suggest_copy" type="object"
-                                            string="Sugerir copy con IA (completa los campos vacíos)"
-                                            icon="fa-magic" class="btn-link"/>
-                                </div>
-                                <field name="headline"/>
-                                <field name="primary_text"/>
-                                <field name="call_to_action"/>
-                                <field name="notes"/>
+                            <div class="mb-3">
+                                <button name="action_suggest_copy" type="object"
+                                        string="Sugerir con IA (completa los campos vacíos)"
+                                        icon="fa-magic" class="btn-secondary"/>
+                            </div>
+                            <group col="2" string="Texto del creativo">
+                                <field name="headline" placeholder="Escribí el titular del anuncio…"/>
+                                <field name="primary_text" placeholder="Escribí el mensaje principal…"/>
+                                <field name="call_to_action" placeholder="Por ejemplo: Pedir diagnóstico"/>
                             </group>
+                            <separator string="Notas e indicaciones creativas"/>
+                            <field name="notes" widget="html" placeholder="Composición, tono, observaciones…"/>
                         </page>
                         <page string="Versiones">
                             <field name="version_ids" readonly="1">

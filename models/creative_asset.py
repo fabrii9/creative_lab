@@ -6,6 +6,8 @@ import io
 import json
 import mimetypes
 import re
+from html import unescape
+from markupsafe import escape
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -24,6 +26,14 @@ class CreativeAsset(models.Model):
     _check_company_auto = True
 
     name = fields.Char(string='Nombre', required=True, tracking=True)
+    auto_name = fields.Boolean(
+        string='Nombre automático', default=False,
+        help='Compone el nombre desde avatar, hipótesis, dolor, conciencia, sofisticación y formato. Desmarcá para escribirlo manualmente.',
+    )
+    format_origin_id = fields.Many2one(
+        'creative.asset', string='Creativo de origen del grupo de formatos',
+        check_company=True, readonly=True, copy=False, ondelete='restrict', index=True,
+    )
     active = fields.Boolean(default=True)
     brief_id = fields.Many2one(
         'creative.brief',
@@ -165,6 +175,7 @@ class CreativeAsset(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        vals_list = [dict(vals) for vals in vals_list]
         for vals in vals_list:
             if (
                 vals.get('state', 'draft') != 'draft'
@@ -173,13 +184,65 @@ class CreativeAsset(models.Model):
                 or vals.get('approved_at')
             ):
                 raise AccessError(_('Los creativos deben iniciar como borrador.'))
-        return super().create(vals_list)
+            vals.setdefault('auto_name', not bool(vals.get('name')))
+            if vals['auto_name']:
+                vals['name'] = vals.get('name') or _('Nuevo creativo')
+        records = super().create(vals_list)
+        records._refresh_auto_name()
+        return records
+
+    @api.model
+    def default_get(self, field_names):
+        values = super().default_get(field_names)
+        if 'auto_name' in field_names:
+            values['auto_name'] = self.env.context.get('default_auto_name', True)
+            if values['auto_name'] and 'name' in field_names and not values.get('name'):
+                values['name'] = _('Nuevo creativo')
+        return values
+
+    def _build_auto_name(self):
+        self.ensure_one()
+        brief, hypothesis = self.brief_id, self.hypothesis_id
+        source = hypothesis.name or brief.name or ''
+        match = re.search(r'AV\d+(?:-H\d+)?', source, re.IGNORECASE)
+        identity = source[:match.end()].strip() if match else 'B%s%s' % (
+            brief.id or '?', '-H%s' % hypothesis.id if hypothesis else '',
+        )
+        root = self.format_origin_id or self._origin
+        code = root.id or 'nuevo'
+        subject = ' '.join((hypothesis.pain or hypothesis.angle or brief.name or 'Creativo').split())[:48]
+        awareness = dict(hypothesis._fields['awareness_level']._description_selection(self.env)).get(
+            hypothesis.awareness_level, 'Sin hipótesis',
+        ) if hypothesis else 'Sin hipótesis'
+        asset = dict(self._fields['asset_type']._description_selection(self.env)).get(self.asset_type, '')
+        placement = dict(self._fields['placement']._description_selection(self.env)).get(self.placement, '')
+        return ' · '.join(filter(None, [
+            '%s-C%s' % (identity, code), subject, awareness,
+            'S%s' % hypothesis.sophistication_level if hypothesis else '',
+            asset, placement, self.aspect_ratio,
+        ]))
+
+    def _refresh_auto_name(self):
+        for creative in self.filtered('auto_name'):
+            name = creative._build_auto_name()
+            if creative.name != name:
+                creative._system_write({'name': name})
+
+    @api.onchange('brief_id', 'hypothesis_id', 'asset_type', 'aspect_ratio', 'placement', 'auto_name')
+    def _onchange_auto_name(self):
+        if self.auto_name:
+            self.name = self._build_auto_name()
+
+    def action_use_automatic_name(self):
+        self.write({'auto_name': True})
 
     def write(self, vals):
         protected = {'state', 'current_version_id', 'approved_by_id', 'approved_at'}
         if protected.intersection(vals):
             raise AccessError(_('Usá las acciones de Creative Lab para cambiar aprobación o versión actual.'))
-        return super().write(vals)
+        result = super().write(vals)
+        self._refresh_auto_name()
+        return result
 
     def _system_write(self, vals):
         return super(CreativeAsset, self).write(vals)
@@ -240,8 +303,9 @@ class CreativeAsset(models.Model):
         self.ensure_one()
         targets = [
             field
-            for field in ('headline', 'primary_text', 'call_to_action')
-            if not self[field] or self[field] == 'Enviar mensaje'
+            for field in ('headline', 'primary_text', 'call_to_action', 'notes')
+            if (not self._plain_notes(self[field]) if field == 'notes' else not (self[field] or '').strip())
+            or (field == 'call_to_action' and self[field] == 'Enviar mensaje')
         ]
         if not targets:
             raise ValidationError(_(
@@ -250,24 +314,45 @@ class CreativeAsset(models.Model):
         suggestions = self._suggest_json(
             _('Redactá el copy del anuncio. Respondé exclusivamente con JSON '
               'válido con esta forma: '
-              '{"headline": "...", "primary_text": "...", "call_to_action": "..."}. '
+              '{"headline": "...", "primary_text": "...", "call_to_action": "...", "notes": "..."}. '
               'headline: una sola línea, máximo 40 caracteres, directo. '
               'primary_text: 1 o 2 oraciones, máximo 125 caracteres, tono cercano. '
               'call_to_action: 2 a 4 palabras para el botón. '
+              'notes: indicaciones breves de composición, tono y ejecución visual, en texto plano. '
               'Sin comillas extra ni explicaciones.'),
             targets,
             kind='copy',
         )
+        values = {}
         for field in targets:
             if suggestions.get(field):
-                self[field] = suggestions[field]
+                value = suggestions[field]
+                values[field] = str(escape(value)).replace('\n', '<br/>') if field == 'notes' else value
+        self.write(values)
+        missing = [self._fields[field].string for field in targets if field not in values]
+        message = _('Se completaron %s campos.') % len(values)
+        if missing:
+            message += ' ' + _('La IA no devolvió: %s. Podés completarlos manualmente o reintentar.') % ', '.join(missing)
+        return {
+            'type': 'ir.actions.client', 'tag': 'display_notification',
+            'params': {
+                'title': _('Sugerencia de IA'), 'message': message,
+                'type': 'warning' if missing else 'success', 'sticky': bool(missing),
+                'next': {'type': 'ir.actions.client', 'tag': 'reload'},
+            },
+        }
+
+    @staticmethod
+    def _plain_notes(value):
+        return unescape(re.sub(r'<[^>]*>', '', str(value or ''))).strip(' \t\r\n\u200b\xa0')
 
     _SUGGESTION_KEY_ALIASES = {
         'prompt': ('prompt', 'image_prompt'),
         'negative_prompt': ('negative_prompt', 'avoid'),
-        'headline': ('headline',),
-        'primary_text': ('primary_text', 'message'),
-        'call_to_action': ('call_to_action', 'cta'),
+        'headline': ('headline', 'titular', 'titulo', 'título'),
+        'primary_text': ('primary_text', 'message', 'texto_principal', 'texto'),
+        'call_to_action': ('call_to_action', 'cta', 'llamado_a_la_accion', 'llamado_a_la_acción'),
+        'notes': ('notes', 'notas', 'creative_notes', 'visual_notes'),
         'description': ('description',),
     }
 
@@ -314,8 +399,9 @@ class CreativeAsset(models.Model):
         if depth > 4:
             return False
         if isinstance(payload, dict):
+            normalized = {str(key).strip().lower().replace(' ', '_'): value for key, value in payload.items()}
             for alias in self._SUGGESTION_KEY_ALIASES.get(key, (key,)):
-                value = payload.get(alias)
+                value = normalized.get(alias)
                 if isinstance(value, str) and value.strip():
                     return value.strip()
             for child in payload.values():
@@ -386,6 +472,8 @@ class CreativeAsset(models.Model):
             (_('Hook de la hipótesis'), hypothesis.hook),
             (_('Titular del creativo'), self.headline),
             (_('Texto principal del creativo'), self.primary_text),
+            (_('Llamado a la acción'), self.call_to_action),
+            (_('Notas creativas'), self._plain_notes(self.notes)),
         ):
             if value:
                 lines.append('%s: %s' % (label, value))

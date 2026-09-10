@@ -135,6 +135,66 @@ class TestPromptSuggestions(TransactionCase):
             'Un solo sistema para stock, ventas y caja.',
         )
 
+    def test_suggest_copy_includes_notes_and_spanish_keys(self):
+        self.creative.notes = '<p><br></p>'
+        response = dict(COPY_RESPONSE, text=(
+            '{"Titular":"Stock claro", "Texto principal":"Ordená tu operación", '
+            '"Llamado a la acción":"Consultar", "Notas":"Mostrar stock. <script>alert(1)</script>"}'
+        ))
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            result = self.creative.action_suggest_copy()
+        self.assertEqual(self.creative.headline, 'Stock claro')
+        self.assertEqual(self.creative.primary_text, 'Ordená tu operación')
+        self.assertEqual(self.creative.call_to_action, 'Consultar')
+        self.assertIn('Mostrar stock.', self.creative.notes)
+        self.assertNotIn('<script>', self.creative.notes)
+        self.assertEqual(result['params']['type'], 'success')
+        self.assertEqual(result['params']['next']['tag'], 'reload')
+
+    def test_partial_suggestion_reports_missing_notes(self):
+        with patch.object(CreativeLLMBridge, 'execute', return_value=COPY_RESPONSE):
+            result = self.creative.action_suggest_copy()
+        self.assertEqual(result['params']['type'], 'warning')
+        self.assertIn('Notas', result['params']['message'])
+        self.creative.notes = '<p>Mi nota manual</p>'
+        with self.assertRaises(ValidationError):
+            self.creative.action_suggest_copy()
+        self.assertIn('Mi nota manual', self.creative.notes)
+
+    def test_automatic_name_create_update_and_manual(self):
+        self.brief.name = '📦 AV1 · Distribuidora'
+        hypothesis = self.env['creative.hypothesis'].create({
+            'name': '📦 AV1-H1 · Stock', 'brief_id': self.brief.id,
+            'segment': 'Distribuidoras', 'pain': 'Stock que no cierra',
+            'awareness_level': 'problem', 'sophistication_level': '3',
+        })
+        creative = self.env['creative.asset'].create({
+            'brief_id': self.brief.id, 'hypothesis_id': hypothesis.id,
+        })
+        self.assertTrue(creative.auto_name)
+        self.assertTrue(creative.name.startswith('📦 AV1-H1-C%s · ' % creative.id))
+        for text in ('Stock que no cierra', 'Consciente del problema', 'S3', 'Imagen', 'Feed', '1:1'):
+            self.assertIn(text, creative.name)
+        creative.write({'aspect_ratio': '9:16', 'placement': 'story'})
+        self.assertTrue(creative.name.endswith('Stories · 9:16'))
+        creative.write({'auto_name': False, 'name': 'Nombre manual'})
+        creative.placement = 'reel'
+        self.assertEqual(creative.name, 'Nombre manual')
+        creative.action_use_automatic_name()
+        self.assertIn('Reels', creative.name)
+        self.assertFalse(self.creative.auto_name)
+        self.assertEqual(self.creative.name, 'Creativo sugerencias')
+
+    def test_auto_named_siblings_are_reused_after_rename(self):
+        self.creative.action_use_automatic_name()
+        wizard = self._wizard()
+        sibling = wizard._find_or_create_sibling('9:16')
+        self.assertEqual(sibling.format_origin_id, self.creative)
+        self.creative.placement = 'multi'
+        self.assertEqual(wizard._find_or_create_sibling('9:16'), sibling)
+        reverse = self.env['creative.generate.wizard'].create({'creative_id': sibling.id})
+        self.assertEqual(reverse._find_or_create_sibling('1:1'), self.creative)
+
     def _publication(self):
         png = base64.b64encode(base64.b64decode(
             'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='

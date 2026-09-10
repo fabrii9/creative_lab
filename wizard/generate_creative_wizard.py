@@ -219,17 +219,28 @@ class CreativeGenerateWizard(models.TransientModel):
 
     def _find_or_create_sibling(self, aspect_ratio):
         creative = self.creative_id
+        origin = creative.format_origin_id or creative
+        sibling = self.env['creative.asset'].search([
+            ('brief_id', '=', creative.brief_id.id),
+            ('hypothesis_id', '=', creative.hypothesis_id.id),
+            ('aspect_ratio', '=', aspect_ratio),
+            '|', ('id', '=', origin.id), ('format_origin_id', '=', origin.id),
+        ], limit=1)
+        if sibling:
+            return sibling
         base_name = re.sub(r'\s*·\s*[^·]*\d+:\d+\s*$', '', creative.name)
         sibling = self.env['creative.asset'].search([
             ('brief_id', '=', creative.brief_id.id),
             ('hypothesis_id', '=', creative.hypothesis_id.id),
             ('aspect_ratio', '=', aspect_ratio),
             ('name', 'ilike', base_name),
-        ], limit=1)
+        ], limit=1) if not creative.auto_name else self.env['creative.asset'].browse()
         if sibling:
             return sibling
         return self.env['creative.asset'].create({
             'name': '%s · %s' % (base_name, aspect_ratio),
+            'auto_name': creative.auto_name,
+            'format_origin_id': origin.id,
             'brief_id': creative.brief_id.id,
             'hypothesis_id': creative.hypothesis_id.id,
             'owner_id': creative.owner_id.id,
