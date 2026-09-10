@@ -50,6 +50,8 @@ class CreativeLLMBridge:
 
     def _render_prompt(self, run):
         profile = run.profile_id
+        if run.operation == 'suggestion':
+            return run.input_prompt or ''
         values = {
             'prompt': run.input_prompt or '',
             'brief': self._brief_context(run.brief_id),
@@ -107,7 +109,17 @@ class CreativeLLMBridge:
         digest = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
         if run.profile_id.task_type in ('text', 'analysis'):
             role = run.profile_id.role
-            if role == 'creative_director':
+            if run.operation == 'suggestion':
+                payload = {
+                    'prompt': 'Pieza editorial minimalista con alto contraste.',
+                    'negative_prompt': 'texto borroso, marcas de agua',
+                    'headline': 'Una idea clara para validar el flujo.',
+                    'primary_text': 'Resultado simulado, sin afirmaciones comerciales reales.',
+                    'call_to_action': 'Consultar',
+                    'description': 'Ejemplo simulado.',
+                    'notes': 'Priorizar una composición clara y legible.',
+                }
+            elif role == 'creative_director':
                 payload = {
                     'concepts': [{
                         'name': 'Concepto editorial de prueba',
@@ -248,7 +260,12 @@ class CreativeLLMBridge:
             return self._analyze_image(provider, profile, run, prompt)
         text = provider.generate(
             prompt,
-            system=profile.system_prompt,
+            system=(
+                'Completá los campos de formulario solicitados. Respondé con un único objeto JSON válido, '
+                'sin Markdown ni explicaciones. Cada valor debe ser una cadena de texto, nunca un objeto, '
+                'lista o null. Respetá las claves solicitadas y el contexto del usuario.'
+                if run.operation == 'suggestion' else profile.system_prompt
+            ),
             model=profile.model_override or None,
             temperature=profile.temperature,
             max_tokens=profile.max_tokens,

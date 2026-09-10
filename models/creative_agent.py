@@ -236,6 +236,7 @@ class CreativeAgentRun(models.Model):
     operation = fields.Selection(
         [
             ('strategy', 'Estrategia'),
+            ('suggestion', 'Sugerencia de formulario'),
             ('initial', 'Generación'),
             ('edit', 'Retoque'),
             ('variation', 'Variación'),
@@ -370,7 +371,10 @@ class CreativeAgentRun(models.Model):
             result = CreativeLLMBridge(self.env).execute(self)
             finished = fields.Datetime.now()
             output_json = result.get('json')
-            if self.profile_id.output_format == 'json':
+            if self.operation == 'suggestion':
+                output_json = self._parse_suggestion_json(output_json if output_json is not None else result.get('text'))
+                result['text'] = json.dumps(output_json, ensure_ascii=False)
+            elif self.profile_id.output_format == 'json':
                 if output_json is None:
                     if not result.get('text'):
                         raise ValidationError(_('El agente no devolvió una salida JSON.'))
@@ -430,6 +434,33 @@ class CreativeAgentRun(models.Model):
             return json.loads(cleaned, parse_constant=_reject_non_finite_json)
         except (TypeError, ValueError) as exc:
             raise ValidationError(_('El agente no devolvió JSON válido.')) from exc
+
+    def _parse_suggestion_json(self, value):
+        """Normalize form responses without applying the strategy profile schema."""
+        if isinstance(value, str):
+            try:
+                value = self._parse_json(value)
+            except ValidationError:
+                # Accept a single JSON object wrapped in explanatory prose.
+                start = value.find('{')
+                if start < 0:
+                    raise ValidationError(_('La sugerencia debe contener un objeto JSON con campos de texto.')) from None
+                try:
+                    value, _end = json.JSONDecoder(parse_constant=_reject_non_finite_json).raw_decode(value[start:])
+                except (ValueError, TypeError):
+                    raise ValidationError(_('La sugerencia contiene JSON incompleto o inválido. Reintentá.')) from None
+        if not isinstance(value, dict):
+            raise ValidationError(_('La sugerencia debe ser un objeto JSON.'))
+        self._validate_finite_json(value)
+        keys = ('prompt', 'negative_prompt', 'headline', 'primary_text', 'call_to_action', 'description', 'notes')
+        normalized = {
+            key: self.creative_id._find_suggestion_value(value, key)
+            for key in keys
+        }
+        normalized = {key: text for key, text in normalized.items() if text}
+        if not normalized:
+            raise ValidationError(_('La sugerencia no contiene campos de texto utilizables. Reintentá.'))
+        return normalized
 
     def _check_preflight_cost(self):
         """Block unpriced or over-budget provider calls before they spend money."""

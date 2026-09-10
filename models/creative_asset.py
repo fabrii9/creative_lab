@@ -433,7 +433,7 @@ class CreativeAsset(models.Model):
             'company_id': self.company_id.id,
             'brief_id': self.brief_id.id,
             'creative_id': self.id,
-            'operation': 'strategy',
+            'operation': 'suggestion',
             'input_prompt': instruction,
         })
         run._execute()

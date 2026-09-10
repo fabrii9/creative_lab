@@ -1,6 +1,6 @@
 {
     'name': 'Creative Lab AI',
-    'version': '19.0.2.3.0',
+    'version': '19.0.2.3.1',
     'category': 'Marketing',
     'summary': 'Creación, versionado, aprobación y atribución de creativos con IA',
     'description': """

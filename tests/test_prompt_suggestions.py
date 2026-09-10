@@ -96,6 +96,41 @@ class TestPromptSuggestions(TransactionCase):
         self.assertEqual(run.status, 'succeeded', run.error_message)
         self.assertIn('Diagnóstico inicial', run.input_prompt)
 
+    def test_form_suggestion_does_not_use_strategy_schema(self):
+        self.text_agent.write({
+            'output_format': 'json',
+            'output_schema': '{"concepts":[{"image_prompt":"texto"}]}',
+            'prompt_template': 'Devolvé conceptos estratégicos: {prompt}',
+            'system_prompt': 'Solo conceptos de estrategia.',
+        })
+        wizard = self._wizard()
+        with patch.object(CreativeLLMBridge, 'execute', return_value=SUGGESTION_RESPONSE):
+            wizard.action_suggest_prompt()
+        run = self._last_run()
+        self.assertEqual(run.operation, 'suggestion')
+        self.assertEqual(run.status, 'succeeded')
+        self.assertEqual(wizard.prompt, 'Un taller ordenado con luz cálida')
+        self.assertNotIn('Devolvé conceptos estratégicos', CreativeLLMBridge(self.env)._render_prompt(run))
+        self.assertEqual(self.text_agent.output_schema, '{"concepts":[{"image_prompt":"texto"}]}')
+        strategy = self.env['creative.agent.run'].create({
+            'profile_id': self.text_agent.id, 'creative_id': self.creative.id,
+            'brief_id': self.brief.id, 'operation': 'strategy', 'input_prompt': 'Estrategia',
+        })
+        with patch.object(CreativeLLMBridge, 'execute', return_value=SUGGESTION_RESPONSE):
+            strategy._execute()
+        self.assertEqual(strategy.status, 'failed')
+
+    def test_suggestion_accepts_wrapped_json_and_rejects_wrong_types(self):
+        response = dict(SUGGESTION_RESPONSE, text='Aquí va:\n{"prompt":"Imagen clara","negative_prompt":"borroso"}\nListo.')
+        with patch.object(CreativeLLMBridge, 'execute', return_value=response):
+            wizard = self._wizard()
+            wizard.action_suggest_prompt()
+        self.assertEqual(wizard.prompt, 'Imagen clara')
+        run = self._last_run()
+        for invalid in ('sin JSON', '{"prompt":', '{"prompt": {"subject":"objeto"}}'):
+            with self.assertRaises(ValidationError):
+                run._parse_suggestion_json(invalid)
+
     def test_suggest_all_keeps_filled_fields(self):
         wizard = self._wizard(prompt='Mi prompt manual')
         with patch.object(CreativeLLMBridge, 'execute', return_value=SUGGESTION_RESPONSE):
