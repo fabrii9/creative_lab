@@ -569,6 +569,7 @@ class TestCreativeMetaAds(TransactionCase):
             self.assertEqual(payloads[step]['status'], 'PAUSED')
         self.assertEqual(payloads['adset']['destination_type'], 'WHATSAPP')
         self.assertEqual(payloads['adset']['optimization_goal'], 'CONVERSATIONS')
+        self.assertEqual(payloads['adset']['is_adset_budget_sharing_enabled'], False)
         self.assertEqual(
             payloads['adset']['targeting']['targeting_automation']['advantage_audience'],
             0,
