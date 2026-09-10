@@ -160,7 +160,7 @@ class CreativePublication(models.Model):
     }
 
     _SYSTEM_FIELDS = {
-        'status', 'meta_account_id', 'external_image_hash', 'external_campaign_id',
+        'status', 'meta_account_id', 'external_image_hash', 'external_vertical_image_hash', 'external_campaign_id',
         'external_adset_id', 'external_ad_id', 'external_creative_id',
         'remote_configured_status', 'remote_effective_status', 'remote_issues_json',
         'publish_step', 'publish_error', 'last_publish_at', 'reconcile_required',
@@ -172,6 +172,7 @@ class CreativePublication(models.Model):
     }
     _SNAPSHOT_FIELDS = {
         'name', 'platform', 'creative_id', 'version_id', 'export_id',
+        'use_placement_images', 'square_export_id', 'vertical_export_id',
         'meta_connection_id', 'campaign_objective',
         'optimization_goal', 'billing_event', 'destination_type', 'special_ad_category',
         'targeting_json', 'primary_text', 'headline', 'description', 'welcome_message',
@@ -206,6 +207,26 @@ class CreativePublication(models.Model):
         ondelete='restrict',
         tracking=True,
     )
+    use_placement_images = fields.Boolean(string='Usar imágenes por ubicación', default=False)
+    square_export_id = fields.Many2one(
+        'creative.asset.export', string='Imagen Feed · 1:1', check_company=True, ondelete='restrict',
+    )
+    vertical_export_id = fields.Many2one(
+        'creative.asset.export', string='Imagen Stories / Reels · 9:16', check_company=True, ondelete='restrict',
+    )
+    square_preview = fields.Binary(related='square_export_id.file', string='Vista previa cuadrada')
+    vertical_preview = fields.Binary(related='vertical_export_id.file', string='Vista previa vertical')
+    external_vertical_image_hash = fields.Char(readonly=True, copy=False)
+
+    @api.onchange('use_placement_images', 'export_id')
+    def _onchange_placement_images(self):
+        if self.use_placement_images and self.export_id:
+            ratio = self.export_id.creative_id.aspect_ratio
+            if ratio == '1:1' and not self.square_export_id:
+                self.square_export_id = self.export_id
+            elif ratio == '9:16' and not self.vertical_export_id:
+                self.vertical_export_id = self.export_id
+
     company_id = fields.Many2one(
         related='creative_id.company_id',
         store=True,
@@ -318,6 +339,15 @@ class CreativePublication(models.Model):
             targeting['age_min'] = minimum
             targeting.pop('age_max', None)
             targeting['age_range'] = [self.suggested_age_min, self.suggested_age_max]
+        if self.use_placement_images:
+            # Only placements with an explicit image mapping are enabled.
+            targeting.update({
+                'publisher_platforms': ['facebook', 'instagram'],
+                'facebook_positions': ['feed', 'story', 'facebook_reels'],
+                'instagram_positions': ['stream', 'story', 'reels'],
+            })
+            for key in ('messenger_positions', 'audience_network_positions', 'threads_positions'):
+                targeting.pop(key, None)
         return targeting
 
     primary_text = fields.Text(string='Texto principal')
@@ -376,6 +406,7 @@ class CreativePublication(models.Model):
     publish_step = fields.Selection([
         ('none', 'Sin iniciar'),
         ('image', 'Imagen'),
+        ('image_vertical', 'Imagen vertical'),
         ('campaign', 'Campaña'),
         ('adset', 'Conjunto'),
         ('creative', 'Creativo'),
@@ -582,28 +613,47 @@ class CreativePublication(models.Model):
             raise ValidationError(_('%s debe ser un objeto JSON.') % label)
         return parsed
 
-    def _validate_for_meta(self):
-        self.ensure_one()
-        connection = self.meta_connection_id
-        if self.version_id.state != 'approved':
+    def _validate_meta_export(self, export, ratio=None):
+        if not export or export.version_id.state != 'approved':
             raise ValidationError(_('La versión debe estar aprobada.'))
-        if not self.export_id or self.export_id.version_id != self.version_id:
-            raise ValidationError(_('Elegí un archivo final de la misma versión.'))
-        if not self.export_id.metadata_removed:
+        if export.company_id != self.company_id:
+            raise ValidationError(_('Las imágenes deben pertenecer a la compañía de la publicación.'))
+        if not export.metadata_removed:
             raise ValidationError(_('El archivo final debe tener los metadatos eliminados.'))
-        if self.export_id.mime_type not in ('image/png', 'image/jpeg'):
+        if export.mime_type not in ('image/png', 'image/jpeg'):
             raise ValidationError(_('Meta admite en este flujo únicamente exportaciones PNG o JPEG.'))
-        if not self.export_id.sha256:
+        if not export.sha256:
             raise ValidationError(_('El archivo final no tiene huella SHA-256.'))
         try:
-            export_raw = base64.b64decode(self.export_id.file or b'')
+            export_raw = base64.b64decode(export.file or b'')
         except Exception as error:
             raise ValidationError(_('El archivo final no contiene base64 válido.')) from error
-        if not export_raw or hashlib.sha256(export_raw).hexdigest() != self.export_id.sha256:
+        if not export_raw or hashlib.sha256(export_raw).hexdigest() != export.sha256:
             raise ValidationError(_('La huella del archivo final no coincide con su contenido.'))
         if len(export_raw) > 30 * 1024 * 1024:
             raise ValidationError(_('La imagen final supera el máximo de 30 MB admitido por este flujo.'))
-        self.export_id._verify_raster_metadata(export_raw)
+        export._verify_raster_metadata(export_raw)
+        if ratio:
+            if not Image:
+                raise ValidationError(_('Pillow es necesario para validar las proporciones.'))
+            with Image.open(io.BytesIO(export_raw)) as image:
+                width, height = image.size
+            if not height or abs(width / height - ratio[0] / ratio[1]) > 0.01:
+                raise ValidationError(_('La imagen %s debe tener proporción %s:%s.') % (export.name, *ratio))
+
+    def _validate_for_meta(self):
+        self.ensure_one()
+        connection = self.meta_connection_id
+        if not self.export_id or self.export_id.version_id != self.version_id:
+            raise ValidationError(_('Elegí un archivo final de la misma versión.'))
+        self._validate_meta_export(self.export_id)
+        if self.use_placement_images:
+            if not self.square_export_id or not self.vertical_export_id:
+                raise ValidationError(_('Elegí las dos imágenes: Feed 1:1 y Stories/Reels 9:16.'))
+            if self.export_id not in (self.square_export_id, self.vertical_export_id):
+                raise ValidationError(_('El archivo final de la pieza debe ser una de las dos imágenes seleccionadas.'))
+            self._validate_meta_export(self.square_export_id, (1, 1))
+            self._validate_meta_export(self.vertical_export_id, (9, 16))
         if not connection or not connection.active:
             raise ValidationError(_('Elegí una conexión Meta activa.'))
         if connection.connection_state != 'ready' or not connection.currency_id:
@@ -757,12 +807,65 @@ class CreativePublication(models.Model):
         story = {'page_id': connection.page_id, 'link_data': link_data}
         if connection.instagram_user_id:
             story['instagram_user_id'] = connection.instagram_user_id
-        return {
+        values = {
             'name': self._meta_name('Creativo'), 'object_story_spec': story,
             'contextual_multi_ads': {
                 'enroll_status': 'OPT_IN' if self.multi_advertiser_ads else 'OPT_OUT',
             },
         }
+        if self.use_placement_images:
+            values['asset_feed_spec'] = self._placement_asset_feed()
+        return values
+
+    def _placement_asset_feed(self):
+        return {
+            'ad_formats': ['SINGLE_IMAGE'],
+            'optimization_type': 'PLACEMENT',
+            'images': [
+                {'hash': self.external_image_hash, 'adlabels': [{'name': 'square'}]},
+                {'hash': self.external_vertical_image_hash, 'adlabels': [{'name': 'vertical'}]},
+            ],
+            'bodies': [{'text': self.primary_text}],
+            'titles': [{'text': self.headline}],
+            'descriptions': [{'text': self.description or ''}],
+            'link_urls': [{'website_url': 'https://api.whatsapp.com/send'}],
+            'call_to_action_types': ['WHATSAPP_MESSAGE'],
+            'asset_customization_rules': [
+                {
+                    'customization_spec': {
+                        'publisher_platforms': ['facebook', 'instagram'],
+                        'facebook_positions': ['feed'], 'instagram_positions': ['stream'],
+                    },
+                    'image_label': {'name': 'square'}, 'priority': 1,
+                },
+                {
+                    'customization_spec': {
+                        'publisher_platforms': ['facebook', 'instagram'],
+                        'facebook_positions': ['story', 'facebook_reels'],
+                        'instagram_positions': ['story', 'reels'],
+                    },
+                    'image_label': {'name': 'vertical'}, 'priority': 2,
+                },
+            ],
+        }
+
+    def _validate_remote_placement_images(self, client):
+        if not self.use_placement_images:
+            return
+        remote = client.get_creative(self.external_creative_id)
+        if not isinstance(remote, dict) or str(remote.get('id') or '') != self.external_creative_id:
+            raise MetaAdsError('Meta no devolvió el creativo multiformato esperado.')
+        actual = remote.get('asset_feed_spec') or {}
+        expected = self._placement_asset_feed()
+        # Meta can normalize copy, links and defaults. Verify the asset routing
+        # contract, including absence of extra rules that could override it.
+        if not isinstance(actual, dict) or any(
+            not isinstance(actual.get(key), list)
+            or len(actual[key]) != len(expected[key])
+            or not self._json_contains(actual[key], expected[key])
+            for key in ('images', 'asset_customization_rules')
+        ):
+            raise MetaAdsError('Meta no confirmó las dos imágenes y sus reglas por ubicación. Revisá el creativo en Ads Manager.')
 
     def _ad_payload(self):
         return {
@@ -852,7 +955,7 @@ class CreativePublication(models.Model):
         self._system_write({'publish_step': step, 'publish_error': False})
         try:
             external_id = False
-            if step != 'image':
+            if step not in ('image', 'image_vertical'):
                 edge, _field_name, suffix = self._REMOTE_STEP_SPECS[step]
                 matches = client.find_named(
                     self.meta_connection_id.ad_account_id,
@@ -879,7 +982,7 @@ class CreativePublication(models.Model):
             if not external_id:
                 raise MetaAdsError(
                     'Meta no devolvió un identificador para el paso %s.' % step,
-                    ambiguous=step != 'image',
+                    ambiguous=step not in ('image', 'image_vertical'),
                 )
             self._system_write({target_field: external_id})
             self._finish_operation(operation, external_id=external_id)
@@ -980,11 +1083,20 @@ class CreativePublication(models.Model):
             if not connection.publish_enabled:
                 raise ValidationError(_('Habilitá “Permitir crear en pausa” en la conexión Meta.'))
             client = connection._get_client()
-            raw = base64.b64decode(publication.export_id.file or b'')
-            steps = (
+            main_export = publication.square_export_id if publication.use_placement_images else publication.export_id
+            raw = base64.b64decode(main_export.file or b'')
+            steps = [
                 ('image', 'external_image_hash', lambda: client.upload_image(
-                    connection.ad_account_id, raw, publication.export_id.filename,
+                    connection.ad_account_id, raw, main_export.filename,
                 )),
+            ]
+            if publication.use_placement_images:
+                steps.append(('image_vertical', 'external_vertical_image_hash', lambda: client.upload_image(
+                    connection.ad_account_id,
+                    base64.b64decode(publication.vertical_export_id.file or b''),
+                    publication.vertical_export_id.filename,
+                )))
+            steps.extend([
                 ('campaign', 'external_campaign_id', lambda: client.create_campaign(
                     connection.ad_account_id, publication._campaign_payload(),
                 )),
@@ -997,12 +1109,20 @@ class CreativePublication(models.Model):
                 ('ad', 'external_ad_id', lambda: client.create_ad(
                     connection.ad_account_id, publication._ad_payload(),
                 )),
-            )
+            ])
             if not all(
                 publication._create_remote_step(step, field_name, callback, client)
                 for step, field_name, callback in steps
             ):
                 continue
+            if publication.use_placement_images:
+                operation = publication._start_operation('creative')
+                try:
+                    publication._validate_remote_placement_images(client)
+                    publication._finish_operation(operation, external_id=publication.external_creative_id)
+                except MetaAdsError as error:
+                    publication._publish_failure(operation, error)
+                    continue
             publication._system_write({
                 'status': 'paused',
                 'publish_step': 'done',
@@ -1071,11 +1191,12 @@ class CreativePublication(models.Model):
                     ) % (campaign_status, adset_status, ad_status))
                     reconciled += 1
                     continue
-                if publication.publish_step == 'image':
+                if publication.publish_step in ('image', 'image_vertical'):
                     # Ad images are content-addressed. Uploading the exact same
                     # clean file again is safe and cannot start delivery.
                     publication._system_write({
-                        'external_image_hash': False,
+                        ('external_vertical_image_hash' if publication.publish_step == 'image_vertical'
+                         else 'external_image_hash'): False,
                         'reconcile_required': False,
                         'reconcile_mode': False,
                         'publish_error': False,
@@ -1303,6 +1424,7 @@ class CreativePublication(models.Model):
     def _validate_remote_for_activation(self, client):
         """Re-read the spend-bearing hierarchy before any ACTIVE write."""
         self.ensure_one()
+        self._validate_remote_placement_images(client)
         campaign = client.get_campaign(self.external_campaign_id)
         adset = client.get_adset(self.external_adset_id)
         ad = client.get_ad(self.external_ad_id)

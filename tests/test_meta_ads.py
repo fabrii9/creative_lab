@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 
 import base64
+import io
 import json
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
 import requests
+from PIL import Image
 
 from odoo import Command, fields
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -65,6 +67,9 @@ class FakeMetaClient:
 
     def create_ad(self, _account, values):
         return self._result('ad', values)
+
+    def get_creative(self, creative_id):
+        return dict(self.payloads.get('creative', {}), id=creative_id)
 
     def set_status(self, object_id, status):
         self.calls.append(('status', (object_id, status)))
@@ -278,6 +283,90 @@ class TestCreativeMetaAds(TransactionCase):
         publication.action_prepare()
         with self.assertRaises(ValidationError):
             publication.write({'name': 'Nombre que rompería la conciliación'})
+
+    def _placement_publication(self):
+        publication = self._publication()
+        vertical = self.creative.copy({'name': 'Vertical', 'aspect_ratio': '9:16'})
+        stream = io.BytesIO()
+        Image.new('RGB', (90, 160), 'blue').save(stream, format='PNG')
+        version = self.env['creative.asset.version'].create({
+            'creative_id': vertical.id, 'operation': 'import', 'prompt': 'Vertical test',
+            'file': base64.b64encode(stream.getvalue()), 'filename': 'vertical.png', 'mime_type': 'image/png',
+        })
+        version.action_submit_review()
+        version.action_approve()
+        export = self.env['creative.asset.export']._create_materialized({
+            'name': 'Vertical export', 'version_id': version.id,
+            'file': version.file, 'filename': 'vertical.png', 'mime_type': 'image/png',
+            'output_format': 'png', 'quality': 95, 'metadata_removed': True,
+            'fingerprint': 'vertical-%s' % version.id,
+        })
+        publication.write({
+            'use_placement_images': True, 'square_export_id': self.export.id,
+            'vertical_export_id': export.id,
+        })
+        return publication
+
+    def test_placement_images_publish_one_ad(self):
+        publication = self._placement_publication()
+        publication.action_prepare()
+        fake = FakeMetaClient()
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=fake), \
+             patch.object(fake, 'upload_image', side_effect=['square-hash', 'vertical-hash']) as upload:
+            publication.action_publish_paused()
+        self.assertEqual(upload.call_count, 2)
+        self.assertEqual(publication.status, 'paused')
+        self.assertEqual([step for step, _values in fake.calls].count('ad'), 1)
+        feed = fake.payloads['creative']['asset_feed_spec']
+        self.assertEqual([item['hash'] for item in feed['images']], ['square-hash', 'vertical-hash'])
+        self.assertEqual(feed['optimization_type'], 'PLACEMENT')
+        self.assertEqual(feed['asset_customization_rules'][1]['image_label'], {'name': 'vertical'})
+        self.assertEqual(feed['call_to_action_types'], ['WHATSAPP_MESSAGE'])
+        self.assertEqual(fake.payloads['adset']['targeting']['publisher_platforms'], ['facebook', 'instagram'])
+        publication._validate_remote_for_activation(fake)
+        fake.payloads['creative']['asset_feed_spec']['images'].pop()
+        with self.assertRaises(MetaAdsError):
+            publication._validate_remote_for_activation(fake)
+        with self.assertRaises(ValidationError):
+            publication.write({'vertical_export_id': self.export.id})
+
+    def test_placement_vertical_retry_keeps_square_upload(self):
+        publication = self._placement_publication()
+        publication.action_prepare()
+        fake = FakeMetaClient()
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=fake), \
+             patch.object(fake, 'upload_image', side_effect=[
+                 'square-hash', MetaAdsError('Timeout', ambiguous=True), 'vertical-hash',
+             ]) as upload:
+            publication.action_publish_paused()
+            self.assertEqual(publication.publish_step, 'image_vertical')
+            self.assertEqual(publication.external_image_hash, 'square-hash')
+            publication.action_reconcile_meta()
+            publication.action_publish_paused()
+            self.assertEqual(upload.call_count, 3)
+        self.assertEqual(publication.status, 'paused')
+
+    def test_placement_images_require_both_correct_ratios(self):
+        publication = self._placement_publication()
+        publication.vertical_export_id = False
+        with self.assertRaises(ValidationError):
+            publication.action_prepare()
+        publication.vertical_export_id = self.export
+        with self.assertRaises(ValidationError):
+            publication.action_prepare()
+
+    def test_placement_readback_failure_retries_without_new_ad(self):
+        publication = self._placement_publication()
+        publication.action_prepare()
+        fake = FakeMetaClient()
+        with patch.object(CreativeMetaAccount, '_get_client', return_value=fake):
+            with patch.object(fake, 'get_creative', return_value={'id': 'creative-test-id'}):
+                publication.action_publish_paused()
+            self.assertEqual(publication.status, 'error')
+            self.assertEqual(publication.external_ad_id, 'ad-test-id')
+            publication.action_publish_paused()
+        self.assertEqual(publication.status, 'paused')
+        self.assertEqual([step for step, _values in fake.calls].count('ad'), 1)
 
     def test_suggested_age_targeting_and_snapshot(self):
         publication = self._publication()

@@ -317,6 +317,11 @@ class MetaAdsClient:
             raise MetaAdsError('Meta devolvió un estado de entrega inválido.')
         return payload
 
+    def get_creative(self, creative_id):
+        return self._request('GET', creative_id, params={
+            'fields': 'id,asset_feed_spec,object_story_spec,contextual_multi_ads',
+        })
+
     def get_ad(self, ad_id):
         fields = ','.join((
             'id', 'name', 'campaign_id', 'adset_id', 'creative', 'configured_status',

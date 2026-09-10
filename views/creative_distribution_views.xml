@@ -163,6 +163,29 @@
                         </group>
                     </group>
                     <notebook>
+                        <page string="Imágenes por ubicación">
+                            <field name="use_placement_images" readonly="status != 'draft'"/>
+                            <div class="alert alert-info" role="alert" invisible="not use_placement_images">
+                                Un solo anuncio con dos imágenes. Seleccioná exportaciones aprobadas y sin metadatos.
+                                La pieza principal debe ser una de estas dos imágenes.
+                                Este modo usa exclusivamente Feed, Stories y Reels de Facebook e Instagram,
+                                reemplazando las ubicaciones del JSON. Comparte texto y destino WhatsApp.
+                            </div>
+                            <group invisible="not use_placement_images">
+                                <group string="Feed · cuadrada 1:1">
+                                    <field name="square_export_id" readonly="status != 'draft'"
+                                           options="{'no_create': True}"
+                                           domain="[('company_id', '=', company_id), ('metadata_removed', '=', True), ('version_id.state', '=', 'approved'), ('mime_type', 'in', ['image/png', 'image/jpeg'])]"/>
+                                    <field name="square_preview" widget="image" readonly="1" nolabel="1"/>
+                                </group>
+                                <group string="Stories / Reels · vertical 9:16">
+                                    <field name="vertical_export_id" readonly="status != 'draft'"
+                                           options="{'no_create': True}"
+                                           domain="[('company_id', '=', company_id), ('metadata_removed', '=', True), ('version_id.state', '=', 'approved'), ('mime_type', 'in', ['image/png', 'image/jpeg'])]"/>
+                                    <field name="vertical_preview" widget="image" readonly="1" nolabel="1"/>
+                                </group>
+                            </group>
+                        </page>
                         <page string="Anuncio y segmentación">
                             <group>
                                 <group>

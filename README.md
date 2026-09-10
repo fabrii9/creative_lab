@@ -188,6 +188,32 @@ vinculado al contacto del canal y al lead/oportunidad del CRM si existe.
 El mismo mensaje nunca se atribuye dos veces, y la publicación registra el
 evento en su historial.
 
+## Dos formatos en un solo anuncio Meta
+
+En una publicación en borrador, abrí **Imágenes por ubicación** y activá
+**Usar imágenes por ubicación**. Seleccioná una exportación cuadrada 1:1
+para Feed y otra vertical 9:16 para Stories/Reels. Ambas deben estar
+aprobadas, sin metadatos y pertenecer a la misma compañía; el archivo final
+de la pieza principal debe ser una de las dos exportaciones. Se muestran
+miniaturas y se validan las proporciones del archivo, no solo su etiqueta.
+
+Este modo reemplaza las ubicaciones del targeting por Feed, Stories y Reels
+de Facebook e Instagram. Conserva audiencia, presupuesto, texto y WhatsApp.
+Sube dos imágenes, crea un solo creativo con reglas por ubicación y un solo
+anuncio. No usa carrusel ni crea un anuncio por formato. La selección queda
+congelada al preparar; para cambiarla, duplicá la publicación.
+
+Los reintentos conservan la imagen ya subida si falla la otra. Odoo consulta
+el creativo remoto para comprobar que Meta conservó las imágenes y reglas;
+si no puede confirmarlas, muestra un error e impide activar automáticamente.
+La compatibilidad final del payload con la cuenta y el objetivo WhatsApp
+debe verificarse en una publicación pausada y sus vistas previas. El modo
+de una sola imagen y las publicaciones existentes siguen disponibles.
+
+Las métricas y las conversaciones WhatsApp se atribuyen al anuncio único;
+este cambio no agrega identificación individual del formato visto por cada
+contacto ni métricas desglosadas por ubicación.
+
 ## Pendiente posterior
 
 La clasificación automática de las conversaciones (lead, calificado, venta)

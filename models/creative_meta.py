@@ -550,7 +550,8 @@ class CreativeMetaOperation(models.Model):
     )
     company_id = fields.Many2one(related='publication_id.company_id', store=True, readonly=True, index=True)
     step = fields.Selection([
-        ('image', 'Subir imagen'), ('campaign', 'Crear campaña'), ('adset', 'Crear conjunto'),
+        ('image', 'Subir imagen'), ('image_vertical', 'Subir imagen vertical'),
+        ('campaign', 'Crear campaña'), ('adset', 'Crear conjunto'),
         ('creative', 'Crear creativo'), ('ad', 'Crear anuncio'), ('activate', 'Activar'),
         ('pause', 'Pausar'), ('sync', 'Sincronizar'), ('reconcile', 'Conciliar'),
     ], required=True, readonly=True)
