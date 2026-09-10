@@ -164,7 +164,7 @@ class CreativePublication(models.Model):
         'external_adset_id', 'external_ad_id', 'external_creative_id',
         'remote_configured_status', 'remote_effective_status', 'remote_issues_json',
         'publish_step', 'publish_error', 'last_publish_at', 'reconcile_required',
-        'reconcile_mode', 'delivery_pending', 'idempotency_key',
+        'reconcile_mode', 'delivery_pending', 'idempotency_key', 'meta_name_code',
         'last_sync_at', 'last_sync_attempt_at', 'sync_error', 'metrics_json',
         'ad_currency_id',
         'spend', 'impressions', 'reach', 'clicks', 'inline_link_clicks',
@@ -245,6 +245,10 @@ class CreativePublication(models.Model):
     idempotency_key = fields.Char(
         string='Clave idempotente', default=lambda self: uuid.uuid4().hex,
         readonly=True, copy=False, index=True,
+    )
+    meta_name_code = fields.Char(
+        string='Código corto Meta', readonly=True, copy=False,
+        help='Referencia corta en los nombres de Meta. Las publicaciones anteriores conservan sus nombres.',
     )
     campaign_objective = fields.Selection(
         [('OUTCOME_LEADS', 'Clientes potenciales · WhatsApp')],
@@ -677,7 +681,7 @@ class CreativePublication(models.Model):
         return moment.replace(tzinfo=timezone.utc).isoformat()
 
     def _meta_name(self, suffix):
-        key = self.idempotency_key or 'legacy-%s' % self.id
+        key = self.meta_name_code or self.idempotency_key or 'legacy-%s' % self.id
         return ('CL-%s · %s · %s' % (key, self.name, suffix))[:100]
 
     def _campaign_payload(self):
@@ -941,6 +945,10 @@ class CreativePublication(models.Model):
             }
             if not publication.idempotency_key:
                 values['idempotency_key'] = uuid.uuid4().hex
+            if not publication.meta_name_code:
+                values['meta_name_code'] = '%s-%s' % (
+                    publication.id, (values.get('idempotency_key') or publication.idempotency_key)[:6],
+                )
             publication._system_write(values)
 
     def action_prepare_and_publish(self):

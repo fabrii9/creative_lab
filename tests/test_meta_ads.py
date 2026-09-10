@@ -648,6 +648,10 @@ class TestCreativeMetaAds(TransactionCase):
     def test_publish_recovers_a_paused_orphan_by_idempotent_name(self):
         publication = self._publication()
         publication.action_prepare()
+        self.assertEqual(
+            publication.meta_name_code,
+            '%s-%s' % (publication.id, publication.idempotency_key[:6]),
+        )
         fake = FakeMetaClient(existing_steps={'campaign'})
         with patch.object(CreativeMetaAccount, '_get_client', return_value=fake):
             publication.action_publish_paused()
