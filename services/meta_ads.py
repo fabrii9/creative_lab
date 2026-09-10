@@ -84,9 +84,13 @@ class MetaAdsClient:
     def _encode(values):
         encoded = {}
         for key, value in (values or {}).items():
-            if value is None or value is False:
+            if value is None:
                 continue
-            if isinstance(value, (dict, list, tuple, bool)):
+            if isinstance(value, bool):
+                # Meta requires explicit booleans as true/false strings; a bare
+                # False must not be dropped from the form body.
+                encoded[key] = 'true' if value else 'false'
+            elif isinstance(value, (dict, list, tuple)):
                 encoded[key] = json.dumps(value, separators=(',', ':'))
             else:
                 encoded[key] = value

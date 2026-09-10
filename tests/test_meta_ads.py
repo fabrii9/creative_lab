@@ -844,6 +844,18 @@ class TestMetaAdsClient(TransactionCase):
             client.set_status('123', 'ACTIVE')
         self.assertTrue(caught.exception.ambiguous)
 
+    def test_encode_sends_explicit_false_as_string(self):
+        encoded = MetaAdsClient._encode({
+            'is_adset_budget_sharing_enabled': False,
+            'flag_on': True,
+            'empty': None,
+            'name': 'Conjunto',
+        })
+        self.assertEqual(encoded['is_adset_budget_sharing_enabled'], 'false')
+        self.assertEqual(encoded['flag_on'], 'true')
+        self.assertNotIn('empty', encoded)
+        self.assertEqual(encoded['name'], 'Conjunto')
+
     def test_post_server_error_is_ambiguous(self):
         client = MetaAdsClient('secret')
         response = Mock()
