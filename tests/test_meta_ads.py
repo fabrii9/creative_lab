@@ -765,6 +765,44 @@ class TestCreativeMetaAds(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestMetaAdsClient(TransactionCase):
+    def test_find_named_paginates_without_name_filter(self):
+        for edge in ('campaigns', 'adsets', 'adcreatives', 'ads'):
+            client = MetaAdsClient('secret')
+            client._request = Mock(side_effect=[
+                {'data': [{'id': '1', 'name': 'Wanted extra'}],
+                 'paging': {'next': 'unused', 'cursors': {'after': 'page2'}}},
+                {'data': [{'id': '2', 'name': 'Wanted'}],
+                 'paging': {'next': 'unused', 'cursors': {'after': 'page3'}}},
+                {'data': [{'id': '2', 'name': 'Wanted'}, {'id': '3', 'name': 'Wanted'}]},
+            ])
+            self.assertEqual(
+                [item['id'] for item in client.find_named('123', edge, 'Wanted')],
+                ['2', '3'],
+            )
+            for call in client._request.call_args_list:
+                self.assertNotIn('filtering', call.kwargs['params'])
+                self.assertEqual(call.args[1], 'act_123/%s' % edge)
+            self.assertEqual(client._request.call_args.kwargs['params']['after'], 'page3')
+
+    def test_find_named_rejects_incomplete_search(self):
+        for responses in (
+            [{'data': {}}],
+            [{'data': [{'name': 'Wanted'}]}],
+            [{'data': [], 'paging': {'next': 'unused'}}],
+            [{'data': [], 'paging': {'next': 'unused', 'cursors': {'after': 'same'}}}] * 2,
+            [{'data': [], 'paging': {'next': 'unused', 'cursors': {'after': 'page2'}}},
+             MetaAdsError('Failed page')],
+        ):
+            client = MetaAdsClient('secret')
+            client._request = Mock(side_effect=responses)
+            with self.assertRaises(MetaAdsError):
+                client.find_named('123', 'campaigns', 'Wanted')
+
+    def test_find_named_empty_search(self):
+        client = MetaAdsClient('secret')
+        client._request = Mock(return_value={'data': []})
+        self.assertEqual(client.find_named('123', 'campaigns', 'Wanted'), [])
+
 
     def test_permissions_returns_only_granted_scopes(self):
         client = MetaAdsClient('secret')

@@ -257,19 +257,31 @@ class MetaAdsClient:
         }
         if edge not in field_map:
             raise ValueError('Unsupported Meta edge: %s' % edge)
-        payload = self._request(
-            'GET',
-            '%s/%s' % (self.account_path(ad_account_id), edge),
-            params={
-                'fields': field_map[edge],
-                'filtering': [{'field': 'name', 'operator': 'EQUAL', 'value': name}],
-                'limit': 10,
-            },
-        )
-        return [
-            record for record in (payload.get('data') or [])
-            if isinstance(record, dict) and record.get('name') == name
-        ]
+        # Name/EQUAL filtering is not supported on every edge. Compare exact
+        # names locally and exhaust pagination before declaring an object absent.
+        params = {'fields': field_map[edge], 'limit': 100}
+        matches = {}
+        seen_cursors = set()
+        while True:
+            payload = self._request(
+                'GET', '%s/%s' % (self.account_path(ad_account_id), edge),
+                params=dict(params),
+            )
+            if not isinstance(payload, dict) or not isinstance(payload.get('data'), list):
+                raise MetaAdsError('Meta devolvió una búsqueda con formato inesperado.')
+            for record in payload['data']:
+                if not isinstance(record, dict) or not record.get('id'):
+                    raise MetaAdsError('Meta devolvió un objeto sin identificador en la búsqueda.')
+                if record.get('name') == name:
+                    matches[record['id']] = record
+            paging = payload.get('paging') or {}
+            if not paging.get('next'):
+                return list(matches.values())
+            cursor = (paging.get('cursors') or {}).get('after')
+            if not cursor or cursor in seen_cursors:
+                raise MetaAdsError('No se pudo completar la paginación de la búsqueda en Meta.')
+            seen_cursors.add(cursor)
+            params['after'] = cursor
 
     def get_campaign(self, campaign_id):
         fields = ','.join((
