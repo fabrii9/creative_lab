@@ -279,6 +279,42 @@ class TestCreativeMetaAds(TransactionCase):
         with self.assertRaises(ValidationError):
             publication.write({'name': 'Nombre que rompería la conciliación'})
 
+    def test_suggested_age_targeting_and_snapshot(self):
+        publication = self._publication()
+        original = json.loads(publication.targeting_json)
+        self.assertEqual(publication._effective_targeting(), original)
+        publication.write({
+            'use_suggested_age': True, 'suggested_age_min': 30, 'suggested_age_max': 55,
+        })
+        targeting = publication._effective_targeting()
+        self.assertEqual(targeting['age_range'], [30, 55])
+        self.assertEqual(targeting['age_min'], 18)
+        self.assertNotIn('age_max', targeting)
+        self.assertEqual(targeting['targeting_automation']['advantage_audience'], 1)
+        self.assertEqual(json.loads(publication.targeting_json), original)
+        publication.action_prepare()
+        for vals in ({'suggested_age_min': 35}, {'multi_advertiser_ads': True}):
+            with self.assertRaises(ValidationError):
+                publication.write(vals)
+
+    def test_invalid_suggested_age(self):
+        publication = self._publication()
+        for minimum, maximum in ((17, 55), (55, 30), (30, 66)):
+            with self.assertRaises(ValidationError), self.cr.savepoint():
+                publication.write({
+                    'use_suggested_age': True,
+                    'suggested_age_min': minimum, 'suggested_age_max': maximum,
+                })
+
+    def test_multi_advertiser_opt_in(self):
+        publication = self._publication()
+        self.assertFalse(publication.multi_advertiser_ads)
+        publication.multi_advertiser_ads = True
+        self.assertEqual(
+            publication._creative_payload()['contextual_multi_ads'],
+            {'enroll_status': 'OPT_IN'},
+        )
+
     def test_connection_results_cannot_be_forged_on_create(self):
         with self.assertRaises(AccessError):
             self.env['creative.meta.account'].create({
@@ -585,6 +621,7 @@ class TestCreativeMetaAds(TransactionCase):
         )
         link_data = payloads['creative']['object_story_spec']['link_data']
         self.assertEqual(link_data['image_hash'], 'image-test-hash')
+        self.assertEqual(payloads['creative']['contextual_multi_ads'], {'enroll_status': 'OPT_OUT'})
         self.assertEqual(
             json.loads(link_data['page_welcome_message'])['text_format']['message']['text'],
             publication.welcome_message,

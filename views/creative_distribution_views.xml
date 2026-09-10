@@ -172,6 +172,7 @@
                                     <field name="destination_type" readonly="status != 'draft'"/>
                                     <field name="special_ad_category" readonly="status != 'draft'"/>
                                     <field name="destination_phone"/>
+                                    <field name="multi_advertiser_ads" readonly="status != 'draft'"/>
                                 </group>
                                 <group string="Copy del anuncio">
                                     <div>
@@ -185,6 +186,16 @@
                                     <field name="primary_text" readonly="status != 'draft'"/>
                                     <field name="welcome_message" readonly="status != 'draft'"/>
                                 </group>
+                            </group>
+                            <group string="Edad sugerida de la audiencia">
+                                <field name="use_suggested_age" readonly="status != 'draft'"/>
+                                <field name="suggested_age_min" invisible="not use_suggested_age" readonly="status != 'draft'"/>
+                                <field name="suggested_age_max" invisible="not use_suggested_age" readonly="status != 'draft'"/>
+                                <div class="alert alert-info" role="alert" invisible="not use_suggested_age">
+                                    Activa audiencia Advantage+. Meta puede ampliar este rango para mejorar resultados.
+                                    Reemplaza la edad máxima del JSON; la edad mínima del JSON se conserva como control.
+                                    65 equivale a 65 años o más.
+                                </div>
                             </group>
                             <group string="Targeting JSON">
                                 <field name="targeting_json" nolabel="1" readonly="status != 'draft'"/>

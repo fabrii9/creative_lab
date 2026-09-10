@@ -177,6 +177,8 @@ class CreativePublication(models.Model):
         'targeting_json', 'primary_text', 'headline', 'description', 'welcome_message',
         'budget_type', 'daily_budget', 'lifetime_budget', 'start_at', 'end_at',
         'activate_after_publish',
+        'use_suggested_age', 'suggested_age_min', 'suggested_age_max',
+        'multi_advertiser_ads',
     }
 
     name = fields.Char(string='Publicación', required=True, tracking=True)
@@ -274,6 +276,46 @@ class CreativePublication(models.Model):
         ),
         help='JSON de targeting aceptado por Meta. Debe incluir geo_locations.',
     )
+    use_suggested_age = fields.Boolean(
+        string='Usar edad sugerida (Advantage+)', default=False,
+        help='Activa audiencia Advantage+ y reemplaza age_max y age_range del JSON. '
+             'Meta puede ampliar el rango sugerido; age_min del JSON sigue siendo un control.',
+    )
+    suggested_age_min = fields.Integer(string='Edad sugerida desde', default=18)
+    suggested_age_max = fields.Integer(
+        string='Edad sugerida hasta', default=65, help='65 representa 65 años o más.',
+    )
+    multi_advertiser_ads = fields.Boolean(
+        string='Anuncios multianunciante', default=False,
+        help='Permite que Meta muestre el anuncio junto a anuncios de otros anunciantes.',
+    )
+
+    @api.constrains('use_suggested_age', 'suggested_age_min', 'suggested_age_max')
+    def _check_suggested_age(self):
+        for publication in self:
+            if publication.use_suggested_age and not (
+                18 <= publication.suggested_age_min <= publication.suggested_age_max <= 65
+            ):
+                raise ValidationError(_('La edad sugerida debe estar entre 18 y 65, con mínimo menor o igual al máximo.'))
+
+    def _effective_targeting(self):
+        targeting = self._json_object(self.targeting_json, _('La segmentación'))
+        if self.use_suggested_age:
+            self._check_suggested_age()
+            if self.special_ad_category != 'NONE':
+                raise ValidationError(_('La edad sugerida de este flujo solo está disponible sin categoría especial.'))
+            minimum = targeting.get('age_min', 18)
+            if type(minimum) is not int or not 18 <= minimum <= 25 or minimum > self.suggested_age_min:
+                raise ValidationError(_('Para Advantage+, age_min del JSON debe estar entre 18 y 25 y no superar la edad sugerida mínima.'))
+            automation = targeting.setdefault('targeting_automation', {})
+            if not isinstance(automation, dict):
+                raise ValidationError(_('targeting_automation debe ser un objeto JSON.'))
+            automation['advantage_audience'] = 1
+            targeting['age_min'] = minimum
+            targeting.pop('age_max', None)
+            targeting['age_range'] = [self.suggested_age_min, self.suggested_age_max]
+        return targeting
+
     primary_text = fields.Text(string='Texto principal')
     headline = fields.Char(string='Título')
     description = fields.Char(string='Descripción')
@@ -562,7 +604,7 @@ class CreativePublication(models.Model):
             raise ValidationError(_('Elegí una conexión Meta activa.'))
         if connection.connection_state != 'ready' or not connection.currency_id:
             raise ValidationError(_('Probá la conexión Meta antes de preparar la publicación.'))
-        targeting = self._json_object(self.targeting_json, _('La segmentación'))
+        targeting = self._effective_targeting()
         geo_locations = targeting.get('geo_locations')
         if not isinstance(geo_locations, dict):
             raise ValidationError(_('La segmentación debe incluir geo_locations.'))
@@ -711,7 +753,12 @@ class CreativePublication(models.Model):
         story = {'page_id': connection.page_id, 'link_data': link_data}
         if connection.instagram_user_id:
             story['instagram_user_id'] = connection.instagram_user_id
-        return {'name': self._meta_name('Creativo'), 'object_story_spec': story}
+        return {
+            'name': self._meta_name('Creativo'), 'object_story_spec': story,
+            'contextual_multi_ads': {
+                'enroll_status': 'OPT_IN' if self.multi_advertiser_ads else 'OPT_OUT',
+            },
+        }
 
     def _ad_payload(self):
         return {
@@ -1316,7 +1363,7 @@ class CreativePublication(models.Model):
                 raise MetaAdsError('La fecha final remota cambió; se bloqueó la activación.')
         elif adset.get('end_time'):
             raise MetaAdsError('El conjunto remoto tiene una fecha final que Odoo no registró.')
-        expected_targeting = self._json_object(self.targeting_json, _('La segmentación'))
+        expected_targeting = self._effective_targeting()
         remote_targeting = adset.get('targeting') or {}
         if not self._json_contains(remote_targeting, expected_targeting):
             raise MetaAdsError('La segmentación remota cambió; se bloqueó la activación.')
